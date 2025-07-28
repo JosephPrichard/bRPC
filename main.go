@@ -1,5 +1,0 @@
-package brpc
-
-func main() {
-
-}
