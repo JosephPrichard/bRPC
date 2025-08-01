@@ -9,20 +9,79 @@ import (
 
 type TokType int
 
+func (t TokType) String() string {
+	switch t {
+	case TokErr:
+		return "<error>"
+	case TokEof:
+		return "<eof>"
+	case TokIden:
+		return "<iden>"
+	case TokInteger:
+		fallthrough
+	case TokHex:
+		fallthrough
+	case TokBinary:
+		return "<integer>"
+	case TokOrd:
+		return "<ord>"
+	case TokTerm:
+		return "';'"
+	case TokSep:
+		return "','"
+	case TokLBrace:
+		return "'{'"
+	case TokRBrace:
+		return "'}'"
+	case TokLParen:
+		return "'('"
+	case TokRParen:
+		return "')'"
+	case TokLBrack:
+		return "'['"
+	case TokRBrack:
+		return "']'"
+	case TokArrow:
+		return "'->'"
+	case TokEqual:
+		return "'='"
+	case TokPipe:
+		return "'|'"
+	case TokMessage:
+		return "'message'"
+	case TokService:
+		return "'service'"
+	case TokRequired:
+		return "'required'"
+	case TokOptional:
+		return "'optional'"
+	case TokStruct:
+		return "'struct'"
+	case TokUnion:
+		return "'union'"
+	case TokEnum:
+		return "'enum'"
+	}
+	return ""
+}
+
 const (
 	TokErr TokType = iota
+	TokEof
 
 	TokIden
 	TokInteger
+	TokBinary
+	TokHex
 	TokOrd
 	TokTerm
 	TokSep
 	TokLBrace
 	TokRBrace
 	TokLParen
+	TokRParen
 	TokLBrack
 	TokRBrack
-	TokRParen
 	TokArrow
 	TokEqual
 	TokPipe
@@ -78,19 +137,13 @@ func NewLexer(input string) Lexer {
 
 func (lex *Lexer) Emit(tok TokType) {
 	val := lex.input[lex.start:lex.curr]
-	token := Token{
-		TokVal:   TokVal{T: tok, Value: val},
-		StartRow: lex.startRow,
-		StartCol: lex.startCol,
-		EndRow:   lex.currRow,
-		EndCol:   lex.currCol,
-	}
-	lex.tokens <- token
+	lex.tokens <- Token{TokVal: TokVal{T: tok, Value: val}, StartRow: lex.startRow, StartCol: lex.startCol, EndRow: lex.currRow, EndCol: lex.currCol}
 	lex.Skip()
 }
 
 func (lex *Lexer) EmitStr() {
 	str := lex.input[lex.start:lex.curr]
+
 	tok := TokIden
 	switch str {
 	case "struct":
@@ -108,14 +161,8 @@ func (lex *Lexer) EmitStr() {
 	case "optional":
 		tok = TokOptional
 	}
-	token := Token{
-		TokVal:   TokVal{T: tok, Value: str},
-		StartRow: lex.startRow,
-		StartCol: lex.startCol,
-		EndRow:   lex.currRow,
-		EndCol:   lex.currCol,
-	}
-	lex.tokens <- token
+
+	lex.tokens <- Token{TokVal: TokVal{T: tok, Value: str}, StartRow: lex.startRow, StartCol: lex.startCol, EndRow: lex.currRow, EndCol: lex.currCol}
 	lex.Skip()
 }
 
@@ -191,6 +238,8 @@ func (lex *Lexer) AcceptUntil(invalid string) {
 }
 
 const numeric = "1234567890"
+const hex = "0123456789abcdef"
+const binary = "01"
 const control = "=()[]{};,->/|"
 const whitespace = " \t\r\n\f"
 const newline = "\r\n"
@@ -198,21 +247,35 @@ const newline = "\r\n"
 func (lex *Lexer) Run() {
 	defer close(lex.tokens)
 	for hasNext := true; hasNext; {
-		hasNext = Lex(lex)
+		hasNext = lex.Lex()
 	}
 }
 
-func LexInteger(lex *Lexer) bool {
-	lex.AcceptWhile(numeric)
+func (lex *Lexer) LexNumeric() bool {
+	var t TokType
+	
+	if lex.Accept("bB") {
+		lex.Next()
+		lex.AcceptWhile(binary)
+		t = TokBinary
+	} else if lex.Accept("xX") {
+		lex.Next()
+		lex.AcceptWhile(hex)
+		t = TokHex
+	} else {
+		lex.AcceptWhile(numeric)
+		t = TokInteger
+	}
+
 	if !lex.Assert(whitespace + control) {
 		lex.Emit(TokErr)
 		return false
 	}
-	lex.Emit(TokInteger)
+	lex.Emit(t)
 	return true
 }
 
-func LexArrow(lex *Lexer) bool {
+func (lex *Lexer) LexArrow() bool {
 	lex.Next()
 	if !lex.Take(">") {
 		lex.Emit(TokErr)
@@ -222,7 +285,7 @@ func LexArrow(lex *Lexer) bool {
 	return true
 }
 
-func LexComment(lex *Lexer) bool {
+func (lex *Lexer) LexComment() bool {
 	lex.Next()
 	if !lex.Take("/") {
 		lex.Emit(TokErr)
@@ -233,7 +296,7 @@ func LexComment(lex *Lexer) bool {
 	return true
 }
 
-func LexOrd(lex *Lexer) bool {
+func (lex *Lexer) LexOrd() bool {
 	lex.Next()
 	lex.AcceptWhile(numeric)
 	if !lex.Assert(whitespace + control) {
@@ -244,7 +307,7 @@ func LexOrd(lex *Lexer) bool {
 	return true
 }
 
-func LexString(lex *Lexer) bool {
+func (lex *Lexer) LexString() bool {
 	r := lex.Peek()
 	if unicode.IsControl(r) || unicode.IsPunct(r) || unicode.IsSpace(r) {
 		lex.Next()
@@ -256,12 +319,13 @@ func LexString(lex *Lexer) bool {
 	return true
 }
 
-func Lex(lex *Lexer) bool {
+func (lex *Lexer) Lex() bool {
 	lex.AcceptWhile(whitespace)
 	lex.Skip()
 
 	switch lex.Peek() {
 	case eof:
+		lex.Emit(TokEof)
 		return false
 	case '=':
 		lex.EmitNext(TokEqual)
@@ -284,16 +348,16 @@ func Lex(lex *Lexer) bool {
 	case '|':
 		lex.EmitNext(TokPipe)
 	case '-':
-		return LexArrow(lex)
+		return lex.LexArrow()
 	case '/':
-		return LexComment(lex)
+		return lex.LexComment()
 	case '@':
-		return LexOrd(lex)
+		return lex.LexOrd()
 	default:
 		if lex.Accept(numeric) {
-			return LexInteger(lex)
+			return lex.LexNumeric()
 		} else {
-			return LexString(lex)
+			return lex.LexString()
 		}
 	}
 	return true
