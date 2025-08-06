@@ -116,36 +116,36 @@ type Token struct {
 }
 
 func (t Token) String() string {
-	return fmt.Sprintf("%s at %d,%d:%d,%d", t.TokVal.String(), t.StartRow, t.StartCol, t.EndRow, t.EndCol)
+	return fmt.Sprintf("'%s' at %d,%d:%d,%d", t.TokVal.String(), t.StartRow, t.StartCol, t.EndRow, t.EndCol)
 }
 
 type Lexer struct {
-	input    string
-	prev     rune
-	curr     int
-	currCol  int
-	currRow  int
-	start    int
-	startCol int
-	startRow int
-	width    int
-	tokens   chan Token
+	Input    string
+	Prev     rune
+	Curr     int
+	CurrCol  int
+	CurrRow  int
+	Start    int
+	StartCol int
+	StartRow int
+	Width    int
+	Tokens   chan Token
 }
 
 const eof = 0
 
 func NewLexer(input string) Lexer {
-	return Lexer{input: input, tokens: make(chan Token)}
+	return Lexer{Input: input, Tokens: make(chan Token)}
 }
 
 func (lex *Lexer) Emit(tok TokType) {
-	val := lex.input[lex.start:lex.curr]
-	lex.tokens <- Token{TokVal: TokVal{T: tok, Value: val}, StartRow: lex.startRow, StartCol: lex.startCol, EndRow: lex.currRow, EndCol: lex.currCol}
+	val := lex.Input[lex.Start:lex.Curr]
+	lex.Tokens <- Token{TokVal: TokVal{T: tok, Value: val}, StartRow: lex.StartRow, StartCol: lex.StartCol, EndRow: lex.CurrRow, EndCol: lex.CurrCol}
 	lex.Skip()
 }
 
 func (lex *Lexer) EmitStr() {
-	str := lex.input[lex.start:lex.curr]
+	str := lex.Input[lex.Start:lex.Curr]
 
 	tok := TokIden
 	switch str {
@@ -169,7 +169,7 @@ func (lex *Lexer) EmitStr() {
 		tok = TokRpc
 	}
 
-	lex.tokens <- Token{TokVal: TokVal{T: tok, Value: str}, StartRow: lex.startRow, StartCol: lex.startCol, EndRow: lex.currRow, EndCol: lex.currCol}
+	lex.Tokens <- Token{TokVal: TokVal{T: tok, Value: str}, StartRow: lex.StartRow, StartCol: lex.StartCol, EndRow: lex.CurrRow, EndCol: lex.CurrCol}
 	lex.Skip()
 }
 
@@ -179,22 +179,22 @@ func (lex *Lexer) EmitNext(tok TokType) {
 }
 
 func (lex *Lexer) Consume() {
-	lex.curr += lex.width
-	if lex.prev == '\n' {
-		lex.currCol = 0
-		lex.currRow++
+	lex.Curr += lex.Width
+	if lex.Prev == '\n' {
+		lex.CurrCol = 0
+		lex.CurrRow++
 	} else {
-		lex.currCol++
+		lex.CurrCol++
 	}
 }
 
 func (lex *Lexer) Peek() rune {
-	if lex.curr >= len(lex.input) {
-		lex.width = 0
+	if lex.Curr >= len(lex.Input) {
+		lex.Width = 0
 		return eof
 	}
-	lex.prev, lex.width = utf8.DecodeRuneInString(lex.input[lex.curr:])
-	return lex.prev
+	lex.Prev, lex.Width = utf8.DecodeRuneInString(lex.Input[lex.Curr:])
+	return lex.Prev
 }
 
 func (lex *Lexer) Next() (r rune) {
@@ -204,9 +204,9 @@ func (lex *Lexer) Next() (r rune) {
 }
 
 func (lex *Lexer) Skip() {
-	lex.start = lex.curr
-	lex.startRow = lex.currRow
-	lex.startCol = lex.currCol
+	lex.Start = lex.Curr
+	lex.StartRow = lex.CurrRow
+	lex.StartCol = lex.CurrCol
 }
 
 func (lex *Lexer) Accept(valid string) bool {
@@ -257,7 +257,7 @@ const whitespace = " \t\r\n\f"
 const newline = "\r\n"
 
 func (lex *Lexer) Run() {
-	defer close(lex.tokens)
+	defer close(lex.Tokens)
 	for hasNext := true; hasNext; {
 		hasNext = lex.Lex()
 	}
@@ -300,6 +300,10 @@ func (lex *Lexer) LexOrd() {
 	lex.Next()
 	lex.AcceptWhile(numeric)
 	if !lex.Assert(whitespace + control) {
+		lex.EmitErr()
+		return
+	}
+	if lex.Curr-lex.Start <= 1 {
 		lex.EmitErr()
 		return
 	}

@@ -10,7 +10,7 @@ func runLexer(input string) []TokVal {
 	go lex.Run()
 
 	var tokens []TokVal
-	for token := range lex.tokens {
+	for token := range lex.Tokens {
 		tokens = append(tokens, token.TokVal)
 	}
 

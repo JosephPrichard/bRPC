@@ -3,7 +3,8 @@ package internal
 type Modifier int
 
 const (
-	Required Modifier = iota
+	Undefined Modifier = iota
+	Required
 	Optional
 )
 
@@ -37,11 +38,12 @@ type UnionAst struct {
 	err       error
 	LocalDefs []Ast
 }
+
 type FieldAst struct {
 	Modifier Modifier
 	Name     string
 	Type     Ast
-	Ord      int
+	Ord      uint64
 	err      error
 }
 
@@ -59,22 +61,29 @@ type RpcAst struct {
 	err  error
 }
 
-type TypeAst struct {
+type TypeRefAst struct {
 	Name string
 }
 
-func (ast *StructAst) Error(err error)  { ast.err = err }
-func (ast *EnumAst) Error(err error)    { ast.err = err }
-func (ast *UnionAst) Error(err error)   { ast.err = err }
-func (ast *ServiceAst) Error(err error) { ast.err = err }
-func (ast *RpcAst) Error(err error)     { ast.err = err }
-func (ast *FieldAst) Error(err error)   { ast.err = err }
-func (ast *TypeAst) Error(_ error)   {}
+type TypeArrayAst struct {
+	Type Ast
+	Size uint64 // 0 means the array is a dynamic array
+}
 
-func (ast *StructAst) String() string  { return "<struct>" }
-func (ast *EnumAst) String() string    { return "<enum>" }
-func (ast *UnionAst) String() string   { return "<union>" }
-func (ast *ServiceAst) String() string { return "<service>" }
-func (ast *RpcAst) String() string     { return "<operation>" }
-func (ast *FieldAst) String() string   { return "<field>" }
-func (ast *TypeAst) String() string   { return "<type>" }
+func (ast *StructAst) Error(err error)    { ast.err = err }
+func (ast *EnumAst) Error(err error)      { ast.err = err }
+func (ast *UnionAst) Error(err error)     { ast.err = err }
+func (ast *ServiceAst) Error(err error)   { ast.err = err }
+func (ast *RpcAst) Error(err error)       { ast.err = err }
+func (ast *FieldAst) Error(err error)     { ast.err = err }
+func (ast *TypeRefAst) Error(_ error)     {}
+func (ast *TypeArrayAst) Error(err error) {}
+
+func (ast *StructAst) String() string    { return "<struct>" }
+func (ast *EnumAst) String() string      { return "<enum>" }
+func (ast *UnionAst) String() string     { return "<union>" }
+func (ast *ServiceAst) String() string   { return "<service>" }
+func (ast *RpcAst) String() string       { return "<operation>" }
+func (ast *FieldAst) String() string     { return "<field>" }
+func (ast *TypeRefAst) String() string   { return "<type>" }
+func (ast *TypeArrayAst) String() string { return "<array>" }

@@ -13,7 +13,11 @@ type Parser struct {
 	LastToken Token
 	HasToken  bool
 	Stack     []Ast
-	Nodes     []Ast
+	Asts      []Ast
+}
+
+func NewParser(tokens chan Token) Parser {
+	return Parser{Tokens: tokens}
 }
 
 func (p *Parser) Top() Ast {
@@ -88,8 +92,14 @@ func (p *Parser) Parse() error {
 			break
 		} else if err != nil {
 			if len(p.Stack) > 0 {
-				p.Top().Error(err)
+				top := p.Top()
 				p.Pop()
+				top.Error(err)
+				if len(p.Stack) == 0 {
+					p.Asts = append(p.Asts, top)
+				}
+			} else {
+				return err
 			}
 		}
 	}
@@ -156,19 +166,19 @@ func (p *Parser) ParseRoot() error {
 	return nil
 }
 
-func (p *Parser) ParseTypeDef(name string) (Ast, error) {
+func (p *Parser) ParseBeginObject(name string) (Ast, error) {
 	var ast Ast
 
 	token := p.Read()
 	switch token.T {
 	case TokStruct:
 		ast = &StructAst{Name: name}
-		if _, err := p.Expect(TokLBrack); err != nil {
+		if _, err := p.Expect(TokLBrace); err != nil {
 			return nil, err
 		}
 	case TokEnum:
 		ast = &EnumAst{Name: name}
-		if _, err := p.Expect(TokLBrack); err != nil {
+		if _, err := p.Expect(TokLBrace); err != nil {
 			return nil, err
 		}
 	case TokUnion:
@@ -190,19 +200,17 @@ func (p *Parser) ParseMessage() (Ast, error) {
 	}
 	name := token.Value
 
-	return p.ParseTypeDef(name)
+	return p.ParseBeginObject(name)
 }
 
 func (p *Parser) ParseStruct(strct *StructAst) error {
-	// LBrack has already been consumed
+	// invariant: LBrack has already been consumed
 	var field *FieldAst
 
 	// either we expect a field, a nested message, or we expect the end of the struct
 	token := p.Peek()
 	switch token.T {
-	case TokRequired:
-		fallthrough
-	case TokOptional:
+	case TokOptional, TokRequired:
 		field = &FieldAst{}
 	case TokMessage:
 		p.Consume()
@@ -215,8 +223,10 @@ func (p *Parser) ParseStruct(strct *StructAst) error {
 	case TokRBrace:
 		p.Consume()
 		p.Pop()
+		p.Asts = append(p.Asts, strct)
 		return nil
 	default:
+		p.Consume()
 		return parseErr(token, TokRequired, TokOptional, TokRBrace)
 	}
 
@@ -229,7 +239,7 @@ func (p *Parser) ParseStruct(strct *StructAst) error {
 }
 
 func (p *Parser) ParseUnion(union *UnionAst) error {
-	// Equal has already been consumed
+	// invariant: Equal has already been consumed
 	for {
 		if len(union.Options) != 0 {
 			if _, err := p.Expect(TokPipe); err != nil {
@@ -251,6 +261,7 @@ func (p *Parser) ParseUnion(union *UnionAst) error {
 			p.Push(message)
 		case TokTerm:
 			p.Pop()
+			p.Asts = append(p.Asts, union)
 		default:
 			return parseErr(token, TokIden, TokStruct, TokTerm)
 		}
@@ -281,7 +292,7 @@ func (p *Parser) ParseNumeric() (int64, error) {
 }
 
 func (p *Parser) ParseEnum(enum *EnumAst) error {
-	// LBrack has already been consumed
+	// invariant: LBrack has already been consumed
 	for {
 		var ec EnumCase
 
@@ -298,6 +309,7 @@ func (p *Parser) ParseEnum(enum *EnumAst) error {
 			p.Push(message)
 		case TokRBrack:
 			p.Pop()
+			p.Asts = append(p.Asts, enum)
 			return nil
 		default:
 			return parseErr(token, TokIden, TokRBrack)
@@ -316,7 +328,136 @@ func (p *Parser) ParseEnum(enum *EnumAst) error {
 	}
 }
 
+func (p *Parser) ParseArrayPrefix() (uint64, error) {
+	if _, err := p.Expect(TokLBrack); err != nil {
+		return 0, err
+	}
+	token := p.Read()
+	switch token.T {
+	case TokInteger:
+		if _, err := p.Expect(TokRBrack); err != nil {
+			return 0, err
+		}
+		size, err := strconv.ParseUint(token.Value, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("%v: %s is not a valid array size", err, token.String())
+		}
+		return size, nil
+	case TokRBrack:
+		return 0, nil
+	default:
+		return 0, parseErr(token, TokInteger, TokRBrack)
+	}
+}
+
+func (p *Parser) ParseBeginType() (Ast, error) {
+	var root Ast
+	var prevArray *TypeArrayAst
+
+	appendAst := func(ast Ast) {
+		if root == nil {
+			root = ast
+		}
+		if prevArray != nil {
+			prevArray.Type = ast
+		}
+		typeArray, ok := ast.(*TypeArrayAst)
+		if ok {
+			prevArray = typeArray
+		}
+	}
+
+	for isTerminal := false; !isTerminal; {
+		token := p.Peek()
+		switch token.T {
+		case TokIden:
+			p.Consume()
+			ref := &TypeRefAst{Name: token.Value}
+			appendAst(ref)
+			isTerminal = true
+		case TokLBrack:
+			size, err := p.ParseArrayPrefix()
+			if err != nil {
+				return nil, err
+			}
+			array := &TypeArrayAst{Size: size}
+			appendAst(array)
+		case TokStruct, TokUnion, TokEnum:
+			object, err := p.ParseBeginObject("")
+			if err != nil {
+				return nil, err
+			}
+			p.Push(object)
+			appendAst(object)
+			isTerminal = true
+		default:
+			p.Consume()
+			return nil, parseErr(token, TokIden, TokStruct, TokUnion, TokEnum)
+		}
+	}
+
+	if root == nil {
+		panic("assertion failed: root is nil after parsing a <type>")
+	}
+	return root, nil
+}
+
+func (p *Parser) ParseOrd() (uint64, error) {
+	token, err := p.Expect(TokOrd)
+	if err != nil {
+		return 0, err
+	}
+	if len(token.Value) < 2 {
+		panic(fmt.Errorf("assertion failed: an ord token should have at least 2 characters"))
+	}
+	ord, err := strconv.ParseUint(token.Value[1:], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%v: %s is not a valid ord", err, token.String())
+	}
+	return ord, nil
+}
+
 func (p *Parser) ParseField(field *FieldAst) error {
+	var token Token
+	var err error
+	var ord uint64
+	var typ Ast
+
+	if field.Modifier == Undefined {
+		token = p.Read()
+		switch token.T {
+		case TokRequired:
+			field.Modifier = Required
+		case TokOptional:
+			field.Modifier = Optional
+		default:
+			return parseErr(token, TokRequired, TokOptional)
+		}
+	} else if field.Name == "" {
+		if token, err = p.Expect(TokIden); err != nil {
+			return err
+		}
+		field.Name = token.Value
+	} else if field.Ord == 0 {
+		if ord, err = p.ParseOrd(); err != nil {
+			return err
+		}
+		field.Ord = ord
+	} else if field.Type == nil {
+		if typ, err = p.ParseBeginType(); err != nil {
+			return err
+		}
+		field.Type = typ
+	} else {
+		if token, err = p.Expect(TokTerm); err != nil {
+			return err
+		}
+		p.Pop()
+		if field.Modifier == Undefined || field.Name == "" || field.Ord < 0 || field.Type == nil {
+			panic(fmt.Sprintf("assertion failed: field: %v should never be unset after parsing", field))
+		}
+	}
+
 	return nil
 }
 
@@ -343,6 +484,7 @@ func (p *Parser) ParseService(service *ServiceAst) error {
 		p.Push(message)
 	case TokRBrack:
 		p.Pop()
+		p.Asts = append(p.Asts, service)
 	default:
 		return parseErr(token, TokIden, TokRBrack)
 	}
@@ -354,52 +496,31 @@ func (p *Parser) ParseService(service *ServiceAst) error {
 	return nil
 }
 
-func (p *Parser) ParseType() (Ast, error) {
-	token := p.Peek()
-	if token.T == TokIden {
-		p.Consume()
-		return &TypeAst{Name: token.Value}, nil
-	} else if token.T == TokStruct || token.T == TokUnion || token.T == TokEnum {
-		def, err := p.ParseTypeDef("")
-		if err != nil {
-			return nil, err
-		}
-		p.Push(def)
-		return def, nil
-	} else {
-		p.Consume()
-		return nil, parseErr(token, TokIden, TokStruct, TokUnion, TokEnum)
-	}
-}
-
 func (p *Parser) ParseRpc(rpc *RpcAst) error {
 	// Iden and LParen has already been consumed
-	var def Ast
+	var typ Ast
 	var err error
 
 	if rpc.Arg == nil {
-		// we haven't parsed the arg yet
-		if def, err = p.ParseType(); err != nil {
+		if typ, err = p.ParseBeginType(); err != nil {
 			return err
 		}
-		rpc.Arg = def
+		rpc.Arg = typ
 	} else if rpc.Ret == nil {
-		// we haven't parsed the ret yet
 		if err = p.ExpectChain(TokRParen, TokReturns, TokLParen); err != nil {
 			return err
 		}
-		if def, err = p.ParseType(); err != nil {
+		if typ, err = p.ParseBeginType(); err != nil {
 			return err
 		}
-		rpc.Ret = def
+		rpc.Ret = typ
 		if _, err = p.Expect(TokRParen); err != nil {
 			return err
 		}
 	} else {
-		// we're done parsing the ast
 		p.Pop()
 		if rpc.Arg == nil || rpc.Ret == nil {
-			panic(fmt.Sprintf("assertion failed: rpc arg: %v and ret: %v should never be nil after parsing", rpc.Arg, rpc.Ret))
+			panic(fmt.Sprintf("assertion failed: rpc: %v should never be unset after parsing", rpc))
 		}
 	}
 
@@ -413,14 +534,13 @@ func parseErr(actual Token, expected ...TokType) error {
 	for i, tok := range expected {
 		sb.WriteString(tok.String())
 		if i == len(expected)-2 {
-			sb.WriteString("or")
+			sb.WriteString(" or ")
 		} else if i != len(expected)-1 {
-			sb.WriteString(",")
+			sb.WriteString(", ")
 		}
 	}
 
-	sb.WriteString(" but got '")
+	sb.WriteString(" but got ")
 	sb.WriteString(actual.String())
-	sb.WriteString("'")
 	return errors.New(sb.String())
 }
