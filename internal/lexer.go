@@ -16,7 +16,7 @@ const (
 	TokBinary
 	TokHex
 	TokOrd
-	TokTerm
+	TokTerminal
 	TokSep
 	TokLBrace
 	TokRBrace
@@ -56,7 +56,7 @@ func (t TokType) String() string {
 		return "<integer>"
 	case TokOrd:
 		return "<ord>"
-	case TokTerm:
+	case TokTerminal:
 		return "';'"
 	case TokSep:
 		return "','"
@@ -99,53 +99,53 @@ func (t TokType) String() string {
 }
 
 type TokVal struct {
-	T     TokType
-	Value string
+	t     TokType
+	value string
 }
 
 func (t TokVal) String() string {
-	return t.Value
+	return t.value
 }
 
 type Token struct {
 	TokVal
-	StartRow int
-	StartCol int
-	EndRow   int
-	EndCol   int
+	startRow int
+	startCol int
+	endRow   int
+	endCol   int
 }
 
 func (t Token) String() string {
-	return fmt.Sprintf("'%s' at %d,%d:%d,%d", t.TokVal.String(), t.StartRow, t.StartCol, t.EndRow, t.EndCol)
+	return fmt.Sprintf("'%s' at %d,%d:%d,%d", t.TokVal.String(), t.startRow, t.startCol, t.endRow, t.endCol)
 }
 
 type Lexer struct {
-	Input    string
-	Prev     rune
-	Curr     int
-	CurrCol  int
-	CurrRow  int
-	Start    int
-	StartCol int
-	StartRow int
-	Width    int
-	Tokens   chan Token
+	input    string
+	prev     rune
+	curr     int
+	currCol  int
+	currRow  int
+	start    int
+	startCol int
+	startRow int
+	width    int
+	tokens   chan Token
 }
 
 const eof = 0
 
-func NewLexer(input string) Lexer {
-	return Lexer{Input: input, Tokens: make(chan Token)}
+func newLexer(input string) Lexer {
+	return Lexer{input: input, tokens: make(chan Token), startCol: 1, startRow: 1, currCol: 1, currRow: 1}
 }
 
-func (lex *Lexer) Emit(tok TokType) {
-	val := lex.Input[lex.Start:lex.Curr]
-	lex.Tokens <- Token{TokVal: TokVal{T: tok, Value: val}, StartRow: lex.StartRow, StartCol: lex.StartCol, EndRow: lex.CurrRow, EndCol: lex.CurrCol}
-	lex.Skip()
+func (lex *Lexer) emit(tok TokType) {
+	val := lex.input[lex.start:lex.curr]
+	lex.tokens <- Token{TokVal: TokVal{t: tok, value: val}, startRow: lex.startRow, startCol: lex.startCol, endRow: lex.currRow, endCol: lex.currCol}
+	lex.skip()
 }
 
-func (lex *Lexer) EmitStr() {
-	str := lex.Input[lex.Start:lex.Curr]
+func (lex *Lexer) emitStr() {
+	str := lex.input[lex.start:lex.curr]
 
 	tok := TokIden
 	switch str {
@@ -169,84 +169,84 @@ func (lex *Lexer) EmitStr() {
 		tok = TokRpc
 	}
 
-	lex.Tokens <- Token{TokVal: TokVal{T: tok, Value: str}, StartRow: lex.StartRow, StartCol: lex.StartCol, EndRow: lex.CurrRow, EndCol: lex.CurrCol}
-	lex.Skip()
+	lex.tokens <- Token{TokVal: TokVal{t: tok, value: str}, startRow: lex.startRow, startCol: lex.startCol, endRow: lex.currRow, endCol: lex.currCol}
+	lex.skip()
 }
 
-func (lex *Lexer) EmitNext(tok TokType) {
-	lex.Consume()
-	lex.Emit(tok)
+func (lex *Lexer) emitNext(tok TokType) {
+	lex.consume()
+	lex.emit(tok)
 }
 
-func (lex *Lexer) Consume() {
-	lex.Curr += lex.Width
-	if lex.Prev == '\n' {
-		lex.CurrCol = 0
-		lex.CurrRow++
+func (lex *Lexer) consume() {
+	lex.curr += lex.width
+	if lex.prev == '\n' {
+		lex.currCol = 1
+		lex.currRow++
 	} else {
-		lex.CurrCol++
+		lex.currCol++
 	}
 }
 
-func (lex *Lexer) Peek() rune {
-	if lex.Curr >= len(lex.Input) {
-		lex.Width = 0
+func (lex *Lexer) peek() rune {
+	if lex.curr >= len(lex.input) {
+		lex.width = 0
 		return eof
 	}
-	lex.Prev, lex.Width = utf8.DecodeRuneInString(lex.Input[lex.Curr:])
-	return lex.Prev
+	lex.prev, lex.width = utf8.DecodeRuneInString(lex.input[lex.curr:])
+	return lex.prev
 }
 
-func (lex *Lexer) Next() (r rune) {
-	r = lex.Peek()
-	lex.Consume()
+func (lex *Lexer) next() (r rune) {
+	r = lex.peek()
+	lex.consume()
 	return
 }
 
-func (lex *Lexer) Skip() {
-	lex.Start = lex.Curr
-	lex.StartRow = lex.CurrRow
-	lex.StartCol = lex.CurrCol
+func (lex *Lexer) skip() {
+	lex.start = lex.curr
+	lex.startRow = lex.currRow
+	lex.startCol = lex.currCol
 }
 
-func (lex *Lexer) Accept(valid string) bool {
-	if strings.IndexRune(valid, lex.Peek()) >= 0 {
-		lex.Consume()
+func (lex *Lexer) accept(valid string) bool {
+	if strings.IndexRune(valid, lex.peek()) >= 0 {
+		lex.consume()
 		return true
 	}
 	return false
 }
 
-func (lex *Lexer) Take(valid string) bool {
-	if strings.IndexRune(valid, lex.Next()) >= 0 {
+func (lex *Lexer) take(valid string) bool {
+	if strings.IndexRune(valid, lex.next()) >= 0 {
 		return true
 	}
 	return false
 }
 
-func (lex *Lexer) Assert(valid string) bool {
-	if strings.IndexRune(valid, lex.Peek()) >= 0 {
+func (lex *Lexer) assert(valid string) bool {
+	if strings.IndexRune(valid, lex.peek()) >= 0 {
 		return true
 	}
-	lex.Consume()
+	lex.consume()
 	return false
 }
 
-func (lex *Lexer) AcceptWhile(valid string) {
-	for strings.IndexRune(valid, lex.Peek()) >= 0 {
-		lex.Consume()
+func (lex *Lexer) acceptWhile(valid string) {
+	for strings.IndexRune(valid, lex.peek()) >= 0 {
+		lex.consume()
 	}
 }
 
-func (lex *Lexer) AcceptUntil(invalid string) {
-	for strings.IndexRune(invalid, lex.Peek()) < 0 {
-		lex.Consume()
+func (lex *Lexer) acceptUntil(invalid string) {
+	for strings.IndexRune(invalid, lex.peek()) < 0 {
+		lex.consume()
 	}
 }
 
-func (lex *Lexer) EmitErr() {
-	lex.AcceptUntil(whitespace + control) // scan until a sentinel symbol
-	lex.Emit(TokErr)
+func (lex *Lexer) emitErr() {
+	lex.acceptUntil(whitespace + control) // scan until a sentinel symbol
+	lex.emit(TokErr)
 }
 
 const numeric = "1234567890"
@@ -256,108 +256,108 @@ const control = "=()[]{};,/|"
 const whitespace = " \t\r\n\f"
 const newline = "\r\n"
 
-func (lex *Lexer) Run() {
-	defer close(lex.Tokens)
+func (lex *Lexer) run() {
+	defer close(lex.tokens)
 	for hasNext := true; hasNext; {
-		hasNext = lex.Lex()
+		hasNext = lex.lex()
 	}
 }
 
-func (lex *Lexer) LexNumeric() {
+func (lex *Lexer) lexNumeric() {
 	var t TokType
 
-	if lex.Accept("bB") {
-		lex.Next()
-		lex.AcceptWhile(binary)
+	if lex.accept("bB") {
+		lex.next()
+		lex.acceptWhile(binary)
 		t = TokBinary
-	} else if lex.Accept("xX") {
-		lex.Next()
-		lex.AcceptWhile(hex)
+	} else if lex.accept("xX") {
+		lex.next()
+		lex.acceptWhile(hex)
 		t = TokHex
 	} else {
-		lex.AcceptWhile(numeric)
+		lex.acceptWhile(numeric)
 		t = TokInteger
 	}
 
-	if !lex.Assert(whitespace + control) {
-		lex.EmitErr()
+	if !lex.assert(whitespace + control) {
+		lex.emitErr()
 		return
 	}
-	lex.Emit(t)
+	lex.emit(t)
 }
 
-func (lex *Lexer) LexComment() {
-	lex.Next()
-	if !lex.Take("/") {
-		lex.EmitErr()
+func (lex *Lexer) lexComment() {
+	lex.next()
+	if !lex.take("/") {
+		lex.emitErr()
 		return
 	}
-	lex.AcceptUntil(newline)
-	lex.Skip()
+	lex.acceptUntil(newline)
+	lex.skip()
 }
 
-func (lex *Lexer) LexOrd() {
-	lex.Next()
-	lex.AcceptWhile(numeric)
-	if !lex.Assert(whitespace + control) {
-		lex.EmitErr()
+func (lex *Lexer) lexOrd() {
+	lex.next()
+	lex.acceptWhile(numeric)
+	if !lex.assert(whitespace + control) {
+		lex.emitErr()
 		return
 	}
-	if lex.Curr-lex.Start <= 1 {
-		lex.EmitErr()
+	if lex.curr-lex.start <= 1 {
+		lex.emitErr()
 		return
 	}
-	lex.Emit(TokOrd)
+	lex.emit(TokOrd)
 }
 
-func (lex *Lexer) LexString() {
-	r := lex.Peek()
+func (lex *Lexer) lexString() {
+	r := lex.peek()
 	if unicode.IsControl(r) || unicode.IsPunct(r) || unicode.IsSpace(r) {
-		lex.Next()
-		lex.EmitErr()
+		lex.next()
+		lex.emitErr()
 		return
 	}
-	lex.AcceptUntil(whitespace + control)
-	lex.EmitStr()
+	lex.acceptUntil(whitespace + control)
+	lex.emitStr()
 }
 
-func (lex *Lexer) Lex() bool {
-	lex.AcceptWhile(whitespace)
-	lex.Skip()
+func (lex *Lexer) lex() bool {
+	lex.acceptWhile(whitespace)
+	lex.skip()
 
-	switch lex.Peek() {
+	switch lex.peek() {
 	case eof:
-		lex.Emit(TokEof)
+		lex.emit(TokEof)
 		return false
 	case '=':
-		lex.EmitNext(TokEqual)
+		lex.emitNext(TokEqual)
 	case '{':
-		lex.EmitNext(TokLBrace)
+		lex.emitNext(TokLBrace)
 	case '}':
-		lex.EmitNext(TokRBrace)
+		lex.emitNext(TokRBrace)
 	case '(':
-		lex.EmitNext(TokLParen)
+		lex.emitNext(TokLParen)
 	case ')':
-		lex.EmitNext(TokRParen)
+		lex.emitNext(TokRParen)
 	case '[':
-		lex.EmitNext(TokLBrack)
+		lex.emitNext(TokLBrack)
 	case ']':
-		lex.EmitNext(TokRBrack)
+		lex.emitNext(TokRBrack)
 	case ';':
-		lex.EmitNext(TokTerm)
+		lex.emitNext(TokTerminal)
 	case ',':
-		lex.EmitNext(TokSep)
+		lex.emitNext(TokSep)
 	case '|':
-		lex.EmitNext(TokPipe)
+		lex.emitNext(TokPipe)
 	case '/':
-		lex.LexComment()
+		lex.lexComment()
 	case '@':
-		lex.LexOrd()
+		lex.lexOrd()
 	default:
-		if lex.Accept(numeric) {
-			lex.LexNumeric()
+		if lex.accept(numeric) {
+			lex.lexNumeric()
 		} else {
-			lex.LexString()
+			lex.lexString()
 		}
 	}
 	return true

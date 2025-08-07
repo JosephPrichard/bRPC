@@ -6,11 +6,11 @@ import (
 )
 
 func runLexer(input string) []TokVal {
-	lex := NewLexer(input)
-	go lex.Run()
+	lex := newLexer(input)
+	go lex.run()
 
 	var tokens []TokVal
-	for token := range lex.Tokens {
+	for token := range lex.tokens {
 		tokens = append(tokens, token.TokVal)
 	}
 
@@ -32,42 +32,42 @@ func TestLexer_Struct(t *testing.T) {
 	tokens := runLexer(input)
 
 	expTokens := []TokVal{
-		{T: TokMessage, Value: "message"},
-		{T: TokIden, Value: "Data1"},
-		{T: TokStruct, Value: "struct"},
-		{T: TokLBrace, Value: "{"},
-		{T: TokRequired, Value: "required"},
-		{T: TokIden, Value: "one"},
-		{T: TokOrd, Value: "@1"},
-		{T: TokIden, Value: "b128"},
-		{T: TokTerm, Value: ";"},
-		{T: TokRequired, Value: "required"},
-		{T: TokIden, Value: "two"},
-		{T: TokOrd, Value: "@2"},
-		{T: TokLBrack, Value: "["},
-		{T: TokRBrack, Value: "]"},
-		{T: TokIden, Value: "b5"},
-		{T: TokTerm, Value: ";"},
-		{T: TokOptional, Value: "optional"},
-		{T: TokIden, Value: "three"},
-		{T: TokOrd, Value: "@3"},
-		{T: TokLBrack, Value: "["},
-		{T: TokInteger, Value: "16"},
-		{T: TokRBrack, Value: "]"},
-		{T: TokIden, Value: "b4"},
-		{T: TokTerm, Value: ";"},
-		{T: TokRBrace, Value: "}"},
-		{T: TokMessage, Value: "message"},
-		{T: TokIden, Value: "Data2"},
-		{T: TokStruct, Value: "struct"},
-		{T: TokLBrace, Value: "{"},
-		{T: TokRequired, Value: "required"},
-		{T: TokIden, Value: "one"},
-		{T: TokOrd, Value: "@1"},
-		{T: TokIden, Value: "Data"},
-		{T: TokTerm, Value: ";"},
-		{T: TokRBrace, Value: "}"},
-		{T: TokEof},
+		{t: TokMessage, value: "message"},
+		{t: TokIden, value: "Data1"},
+		{t: TokStruct, value: "struct"},
+		{t: TokLBrace, value: "{"},
+		{t: TokRequired, value: "required"},
+		{t: TokIden, value: "one"},
+		{t: TokOrd, value: "@1"},
+		{t: TokIden, value: "b128"},
+		{t: TokTerminal, value: ";"},
+		{t: TokRequired, value: "required"},
+		{t: TokIden, value: "two"},
+		{t: TokOrd, value: "@2"},
+		{t: TokLBrack, value: "["},
+		{t: TokRBrack, value: "]"},
+		{t: TokIden, value: "b5"},
+		{t: TokTerminal, value: ";"},
+		{t: TokOptional, value: "optional"},
+		{t: TokIden, value: "three"},
+		{t: TokOrd, value: "@3"},
+		{t: TokLBrack, value: "["},
+		{t: TokInteger, value: "16"},
+		{t: TokRBrack, value: "]"},
+		{t: TokIden, value: "b4"},
+		{t: TokTerminal, value: ";"},
+		{t: TokRBrace, value: "}"},
+		{t: TokMessage, value: "message"},
+		{t: TokIden, value: "Data2"},
+		{t: TokStruct, value: "struct"},
+		{t: TokLBrace, value: "{"},
+		{t: TokRequired, value: "required"},
+		{t: TokIden, value: "one"},
+		{t: TokOrd, value: "@1"},
+		{t: TokIden, value: "Data"},
+		{t: TokTerminal, value: ";"},
+		{t: TokRBrace, value: "}"},
+		{t: TokEof},
 	}
 	assert.Equal(t, expTokens, tokens)
 }
@@ -85,32 +85,32 @@ func TestLexer_Union(t *testing.T) {
 	tokens := runLexer(input)
 
 	expTokens := []TokVal{
-		{T: TokMessage, Value: "message"},
-		{T: TokIden, Value: "Data3"},
-		{T: TokEnum, Value: "enum"},
-		{T: TokLBrace, Value: "{"},
-		{T: TokIden, Value: "One"},
-		{T: TokEqual, Value: "="},
-		{T: TokBinary, Value: "0b1010"},
-		{T: TokTerm, Value: ";"},
-		{T: TokIden, Value: "Two"},
-		{T: TokEqual, Value: "="},
-		{T: TokHex, Value: "0xabc1"},
-		{T: TokTerm, Value: ";"},
-		{T: TokIden, Value: "Three"},
-		{T: TokEqual, Value: "="},
-		{T: TokInteger, Value: "3"},
-		{T: TokTerm, Value: ";"},
-		{T: TokRBrace, Value: "}"},
-		{T: TokMessage, Value: "message"},
-		{T: TokIden, Value: "Data4"},
-		{T: TokUnion, Value: "union"},
-		{T: TokEqual, Value: "="},
-		{T: TokIden, Value: "Data1"},
-		{T: TokPipe, Value: "|"},
-		{T: TokIden, Value: "Data2"},
-		{T: TokTerm, Value: ";"},
-		{T: TokEof},
+		{t: TokMessage, value: "message"},
+		{t: TokIden, value: "Data3"},
+		{t: TokEnum, value: "enum"},
+		{t: TokLBrace, value: "{"},
+		{t: TokIden, value: "One"},
+		{t: TokEqual, value: "="},
+		{t: TokBinary, value: "0b1010"},
+		{t: TokTerminal, value: ";"},
+		{t: TokIden, value: "Two"},
+		{t: TokEqual, value: "="},
+		{t: TokHex, value: "0xabc1"},
+		{t: TokTerminal, value: ";"},
+		{t: TokIden, value: "Three"},
+		{t: TokEqual, value: "="},
+		{t: TokInteger, value: "3"},
+		{t: TokTerminal, value: ";"},
+		{t: TokRBrace, value: "}"},
+		{t: TokMessage, value: "message"},
+		{t: TokIden, value: "Data4"},
+		{t: TokUnion, value: "union"},
+		{t: TokEqual, value: "="},
+		{t: TokIden, value: "Data1"},
+		{t: TokPipe, value: "|"},
+		{t: TokIden, value: "Data2"},
+		{t: TokTerminal, value: ";"},
+		{t: TokEof},
 	}
 	assert.Equal(t, expTokens, tokens)
 }
@@ -118,36 +118,38 @@ func TestLexer_Union(t *testing.T) {
 func TestLexer_Service(t *testing.T) {
 	input := `
 	service ThingService {
-    	rpc DoThis (Input) returns (Output)
-		rpc DoThat (In) returns (Out)
+    	rpc @1 DoThis (input) returns (Output)
+		rpc @2 DoThat (In) returns (Out)
 	}
 	`
 	tokens := runLexer(input)
 
 	expTokens := []TokVal{
-		{T: TokService, Value: "service"},
-		{T: TokIden, Value: "ThingService"},
-		{T: TokLBrace, Value: "{"},
-		{T: TokRpc, Value: "rpc"},
-		{T: TokIden, Value: "DoThis"},
-		{T: TokLParen, Value: "("},
-		{T: TokIden, Value: "Input"},
-		{T: TokRParen, Value: ")"},
-		{T: TokReturns, Value: "returns"},
-		{T: TokLParen, Value: "("},
-		{T: TokIden, Value: "Output"},
-		{T: TokRParen, Value: ")"},
-		{T: TokRpc, Value: "rpc"},
-		{T: TokIden, Value: "DoThat"},
-		{T: TokLParen, Value: "("},
-		{T: TokIden, Value: "In"},
-		{T: TokRParen, Value: ")"},
-		{T: TokReturns, Value: "returns"},
-		{T: TokLParen, Value: "("},
-		{T: TokIden, Value: "Out"},
-		{T: TokRParen, Value: ")"},
-		{T: TokRBrace, Value: "}"},
-		{T: TokEof},
+		{t: TokService, value: "service"},
+		{t: TokIden, value: "ThingService"},
+		{t: TokLBrace, value: "{"},
+		{t: TokRpc, value: "rpc"},
+		{t: TokOrd, value: "@1"},
+		{t: TokIden, value: "DoThis"},
+		{t: TokLParen, value: "("},
+		{t: TokIden, value: "input"},
+		{t: TokRParen, value: ")"},
+		{t: TokReturns, value: "returns"},
+		{t: TokLParen, value: "("},
+		{t: TokIden, value: "Output"},
+		{t: TokRParen, value: ")"},
+		{t: TokRpc, value: "rpc"},
+		{t: TokOrd, value: "@2"},
+		{t: TokIden, value: "DoThat"},
+		{t: TokLParen, value: "("},
+		{t: TokIden, value: "In"},
+		{t: TokRParen, value: ")"},
+		{t: TokReturns, value: "returns"},
+		{t: TokLParen, value: "("},
+		{t: TokIden, value: "Out"},
+		{t: TokRParen, value: ")"},
+		{t: TokRBrace, value: "}"},
+		{t: TokEof},
 	}
 	assert.Equal(t, expTokens, tokens)
 }
@@ -167,13 +169,13 @@ func TestLexer_BadOrd(t *testing.T) {
 	tokens := runLexer(input)
 
 	expTokens := []TokVal{
-		{T: TokMessage, Value: "message"},
-		{T: TokIden, Value: "Data3"},
-		{T: TokStruct, Value: "struct"},
-		{T: TokLBrace, Value: "{"},
-		{T: TokRequired, Value: "required"},
-		{T: TokIden, Value: "one"},
-		{T: TokErr, Value: "@1a"},
+		{t: TokMessage, value: "message"},
+		{t: TokIden, value: "Data3"},
+		{t: TokStruct, value: "struct"},
+		{t: TokLBrace, value: "{"},
+		{t: TokRequired, value: "required"},
+		{t: TokIden, value: "one"},
+		{t: TokErr, value: "@1a"},
 	}
 	assert.Equal(t, expTokens, tokens)
 }
@@ -189,15 +191,15 @@ func TestLexer_BadComment(t *testing.T) {
 	tokens := runLexer(input)
 
 	expTokens := []TokVal{
-		{T: TokMessage, Value: "message"},
-		{T: TokIden, Value: "Data3"},
-		{T: TokEnum, Value: "enum"},
-		{T: TokLBrace, Value: "{"},
-		{T: TokIden, Value: "One"},
-		{T: TokEqual, Value: "="},
-		{T: TokInteger, Value: "1"},
-		{T: TokTerm, Value: ";"},
-		{T: TokErr, Value: "/#"},
+		{t: TokMessage, value: "message"},
+		{t: TokIden, value: "Data3"},
+		{t: TokEnum, value: "enum"},
+		{t: TokLBrace, value: "{"},
+		{t: TokIden, value: "One"},
+		{t: TokEqual, value: "="},
+		{t: TokInteger, value: "1"},
+		{t: TokTerminal, value: ";"},
+		{t: TokErr, value: "/#"},
 	}
 	assert.Equal(t, expTokens, tokens)
 }
@@ -213,24 +215,24 @@ func TestLexer_BadBinary(t *testing.T) {
 	tokens := runLexer(input)
 
 	expTokens := []TokVal{
-		{T: TokMessage, Value: "message"},
-		{T: TokIden, Value: "Data3"},
-		{T: TokEnum, Value: "enum"},
-		{T: TokLBrace, Value: "{"},
-		{T: TokIden, Value: "One"},
-		{T: TokEqual, Value: "="},
-		{T: TokErr, Value: "0B102"},
-		{T: TokTerm, Value: ";"},
-		{T: TokIden, Value: "Two"},
-		{T: TokEqual, Value: "="},
-		{T: TokInteger, Value: "123"},
-		{T: TokTerm, Value: ";"},
-		{T: TokIden, Value: "Three"},
-		{T: TokEqual, Value: "="},
-		{T: TokErr, Value: "0b321"},
-		{T: TokTerm, Value: ";"},
-		{T: TokRBrace, Value: "}"},
-		{T: TokEof},
+		{t: TokMessage, value: "message"},
+		{t: TokIden, value: "Data3"},
+		{t: TokEnum, value: "enum"},
+		{t: TokLBrace, value: "{"},
+		{t: TokIden, value: "One"},
+		{t: TokEqual, value: "="},
+		{t: TokErr, value: "0B102"},
+		{t: TokTerminal, value: ";"},
+		{t: TokIden, value: "Two"},
+		{t: TokEqual, value: "="},
+		{t: TokInteger, value: "123"},
+		{t: TokTerminal, value: ";"},
+		{t: TokIden, value: "Three"},
+		{t: TokEqual, value: "="},
+		{t: TokErr, value: "0b321"},
+		{t: TokTerminal, value: ";"},
+		{t: TokRBrace, value: "}"},
+		{t: TokEof},
 	}
 	assert.Equal(t, expTokens, tokens)
 }
@@ -245,20 +247,20 @@ func TestLexer_BadHex(t *testing.T) {
 	tokens := runLexer(input)
 
 	expTokens := []TokVal{
-		{T: TokMessage, Value: "message"},
-		{T: TokIden, Value: "Data3"},
-		{T: TokEnum, Value: "enum"},
-		{T: TokLBrace, Value: "{"},
-		{T: TokIden, Value: "One"},
-		{T: TokEqual, Value: "="},
-		{T: TokErr, Value: "0Xabcx"},
-		{T: TokTerm, Value: ";"},
-		{T: TokIden, Value: "Two"},
-		{T: TokEqual, Value: "="},
-		{T: TokInteger, Value: "123"},
-		{T: TokTerm, Value: ";"},
-		{T: TokRBrace, Value: "}"},
-		{T: TokEof},
+		{t: TokMessage, value: "message"},
+		{t: TokIden, value: "Data3"},
+		{t: TokEnum, value: "enum"},
+		{t: TokLBrace, value: "{"},
+		{t: TokIden, value: "One"},
+		{t: TokEqual, value: "="},
+		{t: TokErr, value: "0Xabcx"},
+		{t: TokTerminal, value: ";"},
+		{t: TokIden, value: "Two"},
+		{t: TokEqual, value: "="},
+		{t: TokInteger, value: "123"},
+		{t: TokTerminal, value: ";"},
+		{t: TokRBrace, value: "}"},
+		{t: TokEof},
 	}
 	assert.Equal(t, expTokens, tokens)
 }
