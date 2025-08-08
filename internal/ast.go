@@ -14,6 +14,12 @@ type Ast interface {
 	String() string
 }
 
+type PropertyAst struct {
+	Name  string
+	Value string
+	errs  []error
+}
+
 type StructAst struct {
 	Name      string // an empty string is an anonymous struct
 	Fields    []FieldAst
@@ -29,13 +35,13 @@ type EnumAst struct {
 }
 
 type EnumCase struct {
-	Name  string
-	Value int64
+	Name string
+	Ord  uint64
 }
 
 type UnionAst struct {
 	Name      string
-	Options   []string
+	Options   []OptionAst
 	errs      []error
 	LocalDefs []Ast
 }
@@ -46,6 +52,12 @@ type FieldAst struct {
 	Type     Ast
 	Ord      uint64
 	errs     []error
+}
+
+type OptionAst struct {
+	Type Ast
+	Ord  uint64
+	errs []error
 }
 
 type ServiceAst struct {
@@ -72,12 +84,14 @@ type TypeArrayAst struct {
 	Size uint64 // 0 means the array is a dynamic array
 }
 
-func (ast *StructAst) Error(err error)  { ast.errs = append(ast.errs, err) }
-func (ast *EnumAst) Error(err error)    { ast.errs = append(ast.errs, err) }
-func (ast *UnionAst) Error(err error)   { ast.errs = append(ast.errs, err) }
-func (ast *ServiceAst) Error(err error) { ast.errs = append(ast.errs, err) }
-func (ast *RpcAst) Error(err error)     { ast.errs = append(ast.errs, err) }
-func (ast *FieldAst) Error(err error)   { ast.errs = append(ast.errs, err) }
+func (ast *PropertyAst) Error(err error) { ast.errs = append(ast.errs, err) }
+func (ast *StructAst) Error(err error)   { ast.errs = append(ast.errs, err) }
+func (ast *EnumAst) Error(err error)     { ast.errs = append(ast.errs, err) }
+func (ast *UnionAst) Error(err error)    { ast.errs = append(ast.errs, err) }
+func (ast *ServiceAst) Error(err error)  { ast.errs = append(ast.errs, err) }
+func (ast *RpcAst) Error(err error)      { ast.errs = append(ast.errs, err) }
+func (ast *FieldAst) Error(err error)    { ast.errs = append(ast.errs, err) }
+func (ast *OptionAst) Error(err error)   { ast.errs = append(ast.errs, err) }
 func (ast *TypeRefAst) Error(err error) {
 	panic(fmt.Sprintf("assertion error: type ref ast received an unhandled error: %v", err))
 }
@@ -85,6 +99,7 @@ func (ast *TypeArrayAst) Error(err error) {
 	panic(fmt.Sprintf("assertion error: type array ast received an unhandled error: %v", err))
 }
 
+func (ast *PropertyAst) String() string  { return "<property>" }
 func (ast *StructAst) String() string    { return "<struct>" }
 func (ast *EnumAst) String() string      { return "<enum>" }
 func (ast *UnionAst) String() string     { return "<union>" }

@@ -5,6 +5,19 @@ import (
 	"testing"
 )
 
+func TestParser_Properties(t *testing.T) {
+	input := `
+	package = "/hello/\\\"world\"";
+	constant = "value";
+	`
+	asts, errs := runParser(input)
+
+	expectedAsts := []Ast{}
+
+	assert.Equal(t, expectedAsts, asts)
+	assert.Nil(t, errs)
+}
+
 func TestParser_Struct(t *testing.T) {
 	input := `
 	message Data1 struct {
@@ -37,9 +50,9 @@ func TestParser_Struct(t *testing.T) {
 func TestParser_Enum(t *testing.T) {
 	input := `
 	message Data1 enum {
-		ONE = 0b1010;
-		TWO = 0xabc1;
-		THREE = 3;
+		@1 One;
+		@2 Two;
+		@3 Three;
 	}
 	`
 	asts, errs := runParser(input)
@@ -57,7 +70,7 @@ func TestParser_Union(t *testing.T) {
 		@2 struct{ required one @1 b16; };
 		@3 Data1;
 
-		message Data1 union { 
+		message Data1 struct { 
 			required one @1 b2; 
         }
 	}

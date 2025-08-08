@@ -98,18 +98,43 @@ func (p *Parser) parse() {
 
 func (p *Parser) parseRoot() (Ast, error) {
 	token := p.read()
-	if token.t == TokEof {
-		return nil, Eof
-	}
 
 	switch token.t {
+	case TokEof:
+		return nil, Eof
 	case TokMessage:
 		return p.parseMessage()
 	case TokService:
 		return p.parseService()
+	case TokIden:
+		return p.parseProperty(token.value)
 	default:
 		return nil, parseErr(token, TokMessage, TokService)
 	}
+}
+
+func (p *Parser) parseProperty(name string) (Ast, error) {
+	var property PropertyAst
+	property.Name = name
+
+	if _, err := p.expect(TokEqual); err != nil {
+		property.Error(err)
+		return &property, nil
+	}
+
+	token, err := p.expect(TokString)
+	if err != nil {
+		property.Error(err)
+		return &property, nil
+	}
+	property.Value = token.value
+
+	if _, err := p.expect(TokTerminal); err != nil {
+		property.Error(err)
+		return &property, nil
+	}
+
+	return &property, nil
 }
 
 func (p *Parser) parseObject(name string) (Ast, error) {
@@ -169,108 +194,103 @@ func (p *Parser) parseStruct(name string) Ast {
 			return &strct
 		default:
 			p.consume()
-			strct.Error(parseErr(token, TokRequired, TokOptional, TokRBrace))
+			strct.Error(parseErr(token, TokOptional, TokRequired, TokMessage, TokRBrace))
 			return &strct
 		}
 	}
+}
+
+func (p *Parser) parseOption() OptionAst {
+	var option OptionAst
+
+	ord, err := p.parseOrd()
+	if err != nil {
+		option.Error(err)
+		return option
+	}
+	option.Ord = ord
+
+	typ, err := p.parseType()
+	if err != nil {
+		option.Error(err)
+		return option
+	}
+	option.Type = typ
+
+	if _, err := p.expect(TokTerminal); err != nil {
+		option.Error(err)
+		return option
+	}
+
+	return option
 }
 
 func (p *Parser) parseUnion(name string) Ast {
 	var union UnionAst
 	union.Name = name
 
-	if _, err := p.expect(TokEqual); err != nil {
+	if _, err := p.expect(TokLBrace); err != nil {
 		union.Error(err)
 		return &union
 	}
-	for {
-		prefixErr := func(token Token) error {
-			p.consume()
-			if len(union.Options) != 0 {
-				return parseErr(token, TokPipe, TokTerminal)
-			} else {
-				return parseErr(token, TokPipe, TokIden)
-			}
-		}
 
+	for {
 		token := p.peek()
 		switch token.t {
-		case TokIden:
-			if len(union.Options) != 0 {
-				union.Error(prefixErr(token))
-				return &union
-			}
-		case TokPipe:
+		case TokOrd:
+			option := p.parseOption()
+			union.Options = append(union.Options, option)
+		case TokMessage:
 			p.consume()
-		case TokTerminal:
-			if len(union.Options) == 0 {
-				union.Error(prefixErr(token))
-				return &union
+			message, err := p.parseMessage()
+			if err != nil {
+				union.Error(err)
+				continue
 			}
+			union.LocalDefs = append(union.LocalDefs, message)
+		case TokRBrace:
 			p.consume()
 			return &union
 		default:
-			union.Error(prefixErr(token))
+			p.consume()
+			union.Error(parseErr(token, TokOrd, TokMessage, TokRBrace))
 			return &union
 		}
 
-		token, err := p.expect(TokIden)
-		if err != nil {
-			union.Error(err)
-			return &union
-		}
-		union.Options = append(union.Options, token.value)
 	}
 }
 
 func (p *Parser) parseNumeric() (int64, error) {
-	token := p.read()
-
-	numStr := token.value
-
-	var intBase int
-	switch token.t {
-	case TokInteger:
-		intBase = 10
-	case TokBinary:
-		intBase = 2
-		if len(token.value) < 3 {
-			panic(fmt.Sprintf("assertion error: binary literal should be of the form 0b* was %s", token.value))
-		}
-		numStr = token.value[2:]
-	case TokHex:
-		intBase = 16
-		if len(token.value) < 3 {
-			panic(fmt.Sprintf("assertion error: hex literal should be of the form 0x* was %s", token.value))
-		}
-		numStr = token.value[2:]
-	default:
-		return 0, parseErr(token, TokInteger, TokBinary, TokHex)
+	token, err := p.expect(TokInteger)
+	if err != nil {
+		return 0, err
 	}
-
-	value, err := strconv.ParseInt(numStr, intBase, 64)
+	value, err := strconv.ParseInt(token.value, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("%v: %s is not a valid integer", err, token.String())
 	}
 	return value, nil
 }
 
-func (p *Parser) parseCase(name string) (EnumCase, error) {
-	var ec EnumCase
-	ec.Name = name
-
-	if _, err := p.expect(TokEqual); err != nil {
-		return ec, err
+func (p *Parser) parseCase() (EnumCase, error) {
+	ord, err := p.parseOrd()
+	if err != nil {
+		return EnumCase{}, err
 	}
-	value, err := p.parseNumeric()
+
+	var ec EnumCase
+	ec.Ord = ord
+
+	token, err := p.expect(TokIden)
 	if err != nil {
 		return ec, err
 	}
+	ec.Name = token.value
+
 	if _, err := p.expect(TokTerminal); err != nil {
 		return ec, err
 	}
 
-	ec.Value = value
 	return ec, nil
 }
 
@@ -283,16 +303,17 @@ func (p *Parser) parseEnum(name string) Ast {
 		return &enum
 	}
 	for {
-		token := p.read()
+		token := p.peek()
 		switch token.t {
-		case TokIden:
-			ec, err := p.parseCase(name)
+		case TokOrd:
+			ec, err := p.parseCase()
 			if err != nil {
 				enum.Error(err)
 				continue
 			}
 			enum.Cases = append(enum.Cases, ec)
 		case TokMessage:
+			p.consume()
 			message, err := p.parseMessage()
 			if err != nil {
 				enum.Error(err)
@@ -300,9 +321,11 @@ func (p *Parser) parseEnum(name string) Ast {
 			}
 			enum.LocalDefs = append(enum.LocalDefs, message)
 		case TokRBrace:
+			p.consume()
 			return &enum
 		default:
-			enum.Error(parseErr(token, TokIden, TokMessage, TokRBrace))
+			p.consume()
+			enum.Error(parseErr(token, TokOrd, TokMessage, TokRBrace))
 			return &enum
 		}
 	}
@@ -468,7 +491,7 @@ func (p *Parser) parseService() (Ast, error) {
 		case TokRBrace:
 			return &svc, nil
 		default:
-			svc.Error(parseErr(token, TokIden, TokMessage, TokRBrace))
+			svc.Error(parseErr(token, TokRpc, TokMessage, TokRBrace))
 			return &svc, nil
 		}
 	}

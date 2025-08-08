@@ -10,11 +10,9 @@ import (
 const (
 	TokErr TokType = iota
 	TokEof
-
 	TokIden
 	TokInteger
-	TokBinary
-	TokHex
+	TokString
 	TokOrd
 	TokTerminal
 	TokSep
@@ -26,7 +24,6 @@ const (
 	TokRBrack
 	TokEqual
 	TokPipe
-
 	TokMessage
 	TokService
 	TokRequired
@@ -49,11 +46,9 @@ func (t TokType) String() string {
 	case TokIden:
 		return "<iden>"
 	case TokInteger:
-		fallthrough
-	case TokHex:
-		fallthrough
-	case TokBinary:
 		return "<integer>"
+	case TokString:
+		return "<string>"
 	case TokOrd:
 		return "<ord>"
 	case TokTerminal:
@@ -144,7 +139,7 @@ func (lex *Lexer) emit(tok TokType) {
 	lex.skip()
 }
 
-func (lex *Lexer) emitStr() {
+func (lex *Lexer) emitText() {
 	str := lex.input[lex.start:lex.curr]
 
 	tok := TokIden
@@ -250,8 +245,6 @@ func (lex *Lexer) emitErr() {
 }
 
 const numeric = "1234567890"
-const hex = "0123456789abcdef"
-const binary = "01"
 const control = "=()[]{};,/|"
 const whitespace = " \t\r\n\f"
 const newline = "\r\n"
@@ -263,27 +256,13 @@ func (lex *Lexer) run() {
 	}
 }
 
-func (lex *Lexer) lexNumeric() {
-	var t TokType
-
-	if lex.accept("bB") {
-		lex.next()
-		lex.acceptWhile(binary)
-		t = TokBinary
-	} else if lex.accept("xX") {
-		lex.next()
-		lex.acceptWhile(hex)
-		t = TokHex
-	} else {
-		lex.acceptWhile(numeric)
-		t = TokInteger
-	}
-
+func (lex *Lexer) lexInteger() {
+	lex.acceptWhile(numeric)
 	if !lex.assert(whitespace + control) {
 		lex.emitErr()
 		return
 	}
-	lex.emit(t)
+	lex.emit(TokInteger)
 }
 
 func (lex *Lexer) lexComment() {
@@ -310,15 +289,37 @@ func (lex *Lexer) lexOrd() {
 	lex.emit(TokOrd)
 }
 
-func (lex *Lexer) lexString() {
-	r := lex.peek()
-	if unicode.IsControl(r) || unicode.IsPunct(r) || unicode.IsSpace(r) {
+func (lex *Lexer) lexText() {
+	ch := lex.peek()
+	if unicode.IsControl(ch) || unicode.IsPunct(ch) || unicode.IsSpace(ch) {
 		lex.next()
 		lex.emitErr()
 		return
 	}
 	lex.acceptUntil(whitespace + control)
-	lex.emitStr()
+	lex.emitText()
+}
+
+func (lex *Lexer) lexString() {
+	lex.next()
+
+	isEscaped := false
+	for isString := true; isString; {
+		ch := lex.next()
+		switch ch {
+		case '"':
+			if !isEscaped {
+				isString = false
+			}
+			isEscaped = false
+		case '\\':
+			isEscaped = true
+		default:
+			isEscaped = false
+		}
+	}
+
+	lex.emit(TokString)
 }
 
 func (lex *Lexer) lex() bool {
@@ -353,11 +354,13 @@ func (lex *Lexer) lex() bool {
 		lex.lexComment()
 	case '@':
 		lex.lexOrd()
+	case '"':
+		lex.lexString()
 	default:
 		if lex.accept(numeric) {
-			lex.lexNumeric()
+			lex.lexInteger()
 		} else {
-			lex.lexString()
+			lex.lexText()
 		}
 	}
 	return true
