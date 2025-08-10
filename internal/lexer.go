@@ -33,6 +33,7 @@ const (
 	TokEnum
 	TokReturns
 	TokRpc
+	TokImport
 )
 
 type TokType int
@@ -89,8 +90,10 @@ func (t TokType) String() string {
 		return "'returns'"
 	case TokRpc:
 		return "'rpc'"
+	case TokImport:
+		return "'import'"
 	}
-	return ""
+	panic(fmt.Sprintf("unknown token: %d", t))
 }
 
 type TokVal struct {
@@ -162,6 +165,8 @@ func (lex *Lexer) emitText() {
 		tok = TokReturns
 	case "rpc":
 		tok = TokRpc
+	case "import":
+		tok = TokImport
 	}
 
 	lex.tokens <- Token{TokVal: TokVal{t: tok, value: str}, startRow: lex.startRow, startCol: lex.startCol, endRow: lex.currRow, endCol: lex.currCol}
@@ -304,12 +309,12 @@ func (lex *Lexer) lexString() {
 	lex.next()
 
 	isEscaped := false
-	for isString := true; isString; {
+	for isTerminal := false; !isTerminal; {
 		ch := lex.next()
 		switch ch {
 		case '"':
 			if !isEscaped {
-				isString = false
+				isTerminal = true
 			}
 			isEscaped = false
 		case '\\':

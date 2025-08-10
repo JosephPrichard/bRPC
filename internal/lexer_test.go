@@ -19,21 +19,23 @@ func runLexer(input string) []TokVal {
 
 func TestLexer_Properties(t *testing.T) {
 	input := `
-	package = "/hello/\\\"world\"";
-	constant = "value";
+	import "/path/to/idl/idl.brpc"
+
+	package = "/hello/\\\"world\""
+	constant = "value"
 	`
 
 	tokens := runLexer(input)
 
 	expTokens := []TokVal{
+		{t: TokImport, value: "import"},
+		{t: TokString, value: "\"/path/to/idl/idl.brpc\""},
 		{t: TokIden, value: "package"},
 		{t: TokEqual, value: "="},
 		{t: TokString, value: "\"/hello/\\\\\\\"world\\\"\""},
-		{t: TokTerminal, value: ";"},
 		{t: TokIden, value: "constant"},
 		{t: TokEqual, value: "="},
 		{t: TokString, value: "\"value\""},
-		{t: TokTerminal, value: ";"},
 		{t: TokEof},
 	}
 	assert.Equal(t, expTokens, tokens)
@@ -47,8 +49,9 @@ func TestLexer_Struct(t *testing.T) {
 		optional three @3 [16]b4;
 	}
 
-	message Data2 struct {
-		required one @1 Data;
+	message Data2 struct[A, B] {
+		required one @1 A;
+        required two @2 B;
 	}
 	`
 	tokens := runLexer(input)
@@ -82,11 +85,21 @@ func TestLexer_Struct(t *testing.T) {
 		{t: TokMessage, value: "message"},
 		{t: TokIden, value: "Data2"},
 		{t: TokStruct, value: "struct"},
+		{t: TokLBrack, value: "["},
+		{t: TokIden, value: "A"},
+		{t: TokSep, value: ","},
+		{t: TokIden, value: "B"},
+		{t: TokRBrack, value: "]"},
 		{t: TokLBrace, value: "{"},
 		{t: TokRequired, value: "required"},
 		{t: TokIden, value: "one"},
 		{t: TokOrd, value: "@1"},
-		{t: TokIden, value: "Data"},
+		{t: TokIden, value: "A"},
+		{t: TokTerminal, value: ";"},
+		{t: TokRequired, value: "required"},
+		{t: TokIden, value: "two"},
+		{t: TokOrd, value: "@2"},
+		{t: TokIden, value: "B"},
 		{t: TokTerminal, value: ";"},
 		{t: TokRBrace, value: "}"},
 		{t: TokEof},
