@@ -15,7 +15,7 @@ const (
 	TokString
 	TokOrd
 	TokTerminal
-	TokSep
+	TokComma
 	TokLBrace
 	TokRBrace
 	TokLParen
@@ -34,6 +34,7 @@ const (
 	TokReturns
 	TokRpc
 	TokImport
+	TokComment
 )
 
 type TokType int
@@ -54,7 +55,7 @@ func (t TokType) String() string {
 		return "<ord>"
 	case TokTerminal:
 		return "';'"
-	case TokSep:
+	case TokComma:
 		return "','"
 	case TokLBrace:
 		return "'{'"
@@ -92,13 +93,17 @@ func (t TokType) String() string {
 		return "'rpc'"
 	case TokImport:
 		return "'import'"
+	case TokComment:
+		return "'//'"
+	default:
+		panic(fmt.Sprintf("assertion error: unknown token: %d", t))
 	}
-	panic(fmt.Sprintf("unknown token: %d", t))
 }
 
 type TokVal struct {
-	t     TokType
-	value string
+	t        TokType
+	value    string
+	expected TokType
 }
 
 func (t TokVal) String() string {
@@ -178,6 +183,26 @@ func (lex *Lexer) emitNext(tok TokType) {
 	lex.emit(tok)
 }
 
+func (lex *Lexer) emitErr(expected TokType) {
+	// scan until a sentinel symbol
+	if expected == TokComment {
+		lex.acceptUntil(newline)
+	} else {
+		lex.acceptUntil(whitespace + control)
+	}
+
+	val := lex.input[lex.start:lex.curr]
+	token := Token{
+		TokVal:   TokVal{t: TokErr, value: val, expected: expected},
+		startRow: lex.startRow,
+		startCol: lex.startCol,
+		endRow:   lex.currRow,
+		endCol:   lex.currCol,
+	}
+	lex.tokens <- token
+	lex.skip()
+}
+
 func (lex *Lexer) consume() {
 	lex.curr += lex.width
 	if lex.prev == '\n' {
@@ -244,11 +269,6 @@ func (lex *Lexer) acceptUntil(invalid string) {
 	}
 }
 
-func (lex *Lexer) emitErr() {
-	lex.acceptUntil(whitespace + control) // scan until a sentinel symbol
-	lex.emit(TokErr)
-}
-
 const numeric = "1234567890"
 const control = "=()[]{};,/|"
 const whitespace = " \t\r\n\f"
@@ -262,18 +282,19 @@ func (lex *Lexer) run() {
 }
 
 func (lex *Lexer) lexInteger() {
+	tok := TokInteger
 	lex.acceptWhile(numeric)
 	if !lex.assert(whitespace + control) {
-		lex.emitErr()
+		lex.emitErr(tok)
 		return
 	}
-	lex.emit(TokInteger)
+	lex.emit(tok)
 }
 
 func (lex *Lexer) lexComment() {
 	lex.next()
 	if !lex.take("/") {
-		lex.emitErr()
+		lex.emitErr(TokComment)
 		return
 	}
 	lex.acceptUntil(newline)
@@ -281,26 +302,21 @@ func (lex *Lexer) lexComment() {
 }
 
 func (lex *Lexer) lexOrd() {
+	tok := TokOrd
 	lex.next()
 	lex.acceptWhile(numeric)
 	if !lex.assert(whitespace + control) {
-		lex.emitErr()
+		lex.emitErr(tok)
 		return
 	}
 	if lex.curr-lex.start <= 1 {
-		lex.emitErr()
+		lex.emitErr(tok)
 		return
 	}
-	lex.emit(TokOrd)
+	lex.emit(tok)
 }
 
 func (lex *Lexer) lexText() {
-	ch := lex.peek()
-	if unicode.IsControl(ch) || unicode.IsPunct(ch) || unicode.IsSpace(ch) {
-		lex.next()
-		lex.emitErr()
-		return
-	}
 	lex.acceptUntil(whitespace + control)
 	lex.emitText()
 }
@@ -331,7 +347,8 @@ func (lex *Lexer) lex() bool {
 	lex.acceptWhile(whitespace)
 	lex.skip()
 
-	switch lex.peek() {
+	ch := lex.peek()
+	switch ch {
 	case eof:
 		lex.emit(TokEof)
 		return false
@@ -352,7 +369,7 @@ func (lex *Lexer) lex() bool {
 	case ';':
 		lex.emitNext(TokTerminal)
 	case ',':
-		lex.emitNext(TokSep)
+		lex.emitNext(TokComma)
 	case '|':
 		lex.emitNext(TokPipe)
 	case '/':
@@ -364,8 +381,10 @@ func (lex *Lexer) lex() bool {
 	default:
 		if lex.accept(numeric) {
 			lex.lexInteger()
-		} else {
+		} else if !unicode.IsControl(ch) && !unicode.IsPunct(ch) && !unicode.IsSpace(ch) {
 			lex.lexText()
+		} else {
+			lex.emitErr(0)
 		}
 	}
 	return true

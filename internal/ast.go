@@ -9,20 +9,65 @@ const (
 	Optional
 )
 
+type AstKind int
+
+const (
+	UnknownAstKind AstKind = iota
+	PropertyAstKind
+	ImportAstKind
+	StructAstKind
+	EnumAstKind
+	UnionAstKind
+	FieldAstKind
+	OptionAstKind
+	ServiceAstKind
+	RpcAstKind
+	TypeAstKind
+	ArrayAstKind
+)
+
+func (kind AstKind) String() string {
+	switch kind {
+	case UnknownAstKind:
+		return "<unknown>"
+	case PropertyAstKind:
+		return "<property>"
+	case ImportAstKind:
+		return "<import>"
+	case StructAstKind:
+		return "<struct>"
+	case EnumAstKind:
+		return "<enum>"
+	case UnionAstKind:
+		return "<union>"
+	case FieldAstKind:
+		return "<field>"
+	case OptionAstKind:
+		return "<option>"
+	case ServiceAstKind:
+		return "<service>"
+	case RpcAstKind:
+		return "<rpc>"
+	case TypeAstKind:
+		return "<type>"
+	case ArrayAstKind:
+		return "<array>"
+	default:
+		panic(fmt.Sprintf("assertion error: unknown AstKind: %d", kind))
+	}
+}
+
 type Ast interface {
-	Error(err error)
-	Category() string
+	Kind() AstKind
 }
 
 type PropertyAst struct {
 	Name  string
 	Value string
-	Errs  []error
 }
 
 type ImportAst struct {
 	Path string
-	Err  error
 }
 
 type StructAst struct {
@@ -30,13 +75,11 @@ type StructAst struct {
 	Fields    []FieldAst
 	TypeArgs  []string
 	LocalDefs []Ast
-	Errs      []error
 }
 
 type EnumAst struct {
 	Name  string // an empty string is an anonymous enum
 	Cases []EnumCase
-	Errs  []error
 }
 
 type EnumCase struct {
@@ -47,8 +90,8 @@ type EnumCase struct {
 type UnionAst struct {
 	Name      string // an empty string is an anonymous union
 	Options   []OptionAst
+	TypeArgs  []string
 	LocalDefs []Ast
-	Errs      []error
 }
 
 type FieldAst struct {
@@ -56,19 +99,16 @@ type FieldAst struct {
 	Name     string
 	Type     Ast
 	Ord      uint64
-	Errs     []error
 }
 
 type OptionAst struct {
 	Type Ast
 	Ord  uint64
-	Errs []error
 }
 
 type ServiceAst struct {
 	Name       string
 	Procedures []RpcAst
-	errs       []error
 	LocalDefs  []Ast
 }
 
@@ -77,41 +117,27 @@ type RpcAst struct {
 	Ord  uint64
 	Arg  Ast
 	Ret  Ast
-	errs []error
 }
 
-type TypeRefAst struct {
-	Name string
+type TypeAst struct {
+	Alias    string // an empty string is not an alias
+	Value    string
+	TypeArgs []Ast
 }
 
-type TypeArrayAst struct {
+type ArrayAst struct {
 	Type Ast
 	Size uint64 // 0 means the array is a dynamic array
 }
 
-func (ast *PropertyAst) Error(err error) { ast.Errs = append(ast.Errs, err) }
-func (ast *ImportAst) Error(err error)   { ast.Err = err }
-func (ast *StructAst) Error(err error)   { ast.Errs = append(ast.Errs, err) }
-func (ast *EnumAst) Error(err error)     { ast.Errs = append(ast.Errs, err) }
-func (ast *UnionAst) Error(err error)    { ast.Errs = append(ast.Errs, err) }
-func (ast *ServiceAst) Error(err error)  { ast.errs = append(ast.errs, err) }
-func (ast *RpcAst) Error(err error)      { ast.errs = append(ast.errs, err) }
-func (ast *FieldAst) Error(err error)    { ast.Errs = append(ast.Errs, err) }
-func (ast *OptionAst) Error(err error)   { ast.Errs = append(ast.Errs, err) }
-func (ast *TypeRefAst) Error(err error) {
-	panic(fmt.Sprintf("assertion error: type ref ast received an unhandled error: %v", err))
-}
-func (ast *TypeArrayAst) Error(err error) {
-	panic(fmt.Sprintf("assertion error: type array ast received an unhandled error: %v", err))
-}
-
-func (ast *PropertyAst) Category() string  { return "<property>" }
-func (ast *ImportAst) Category() string    { return "<import>" }
-func (ast *StructAst) Category() string    { return "<struct>" }
-func (ast *EnumAst) Category() string      { return "<enum>" }
-func (ast *UnionAst) Category() string     { return "<union>" }
-func (ast *ServiceAst) Category() string   { return "<service>" }
-func (ast *RpcAst) Category() string       { return "<operation>" }
-func (ast *FieldAst) Category() string     { return "<field>" }
-func (ast *TypeRefAst) Category() string   { return "<type>" }
-func (ast *TypeArrayAst) Category() string { return "<array>" }
+func (ast *PropertyAst) Kind() AstKind { return PropertyAstKind }
+func (ast *ImportAst) Kind() AstKind   { return ImportAstKind }
+func (ast *StructAst) Kind() AstKind   { return StructAstKind }
+func (ast *EnumAst) Kind() AstKind     { return EnumAstKind }
+func (ast *UnionAst) Kind() AstKind    { return UnionAstKind }
+func (ast *ServiceAst) Kind() AstKind  { return ServiceAstKind }
+func (ast *RpcAst) Kind() AstKind      { return RpcAstKind }
+func (ast *OptionAst) Kind() AstKind   { return OptionAstKind }
+func (ast *FieldAst) Kind() AstKind    { return FieldAstKind }
+func (ast *TypeAst) Kind() AstKind     { return TypeAstKind }
+func (ast *ArrayAst) Kind() AstKind    { return ArrayAstKind }

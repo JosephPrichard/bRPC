@@ -87,7 +87,7 @@ func TestLexer_Struct(t *testing.T) {
 		{t: TokStruct, value: "struct"},
 		{t: TokLBrack, value: "["},
 		{t: TokIden, value: "A"},
-		{t: TokSep, value: ","},
+		{t: TokComma, value: ","},
 		{t: TokIden, value: "B"},
 		{t: TokRBrack, value: "]"},
 		{t: TokLBrace, value: "{"},
@@ -189,7 +189,7 @@ func TestLexer_Service(t *testing.T) {
 func TestLexer_Empty(t *testing.T) {
 	input := ""
 	tokens := runLexer(input)
-	assert.Nil(t, tokens)
+	assert.Equal(t, []TokVal{{t: TokEof}}, tokens)
 }
 
 func TestLexer_BadOrd(t *testing.T) {
@@ -207,7 +207,7 @@ func TestLexer_BadOrd(t *testing.T) {
 		{t: TokLBrace, value: "{"},
 		{t: TokRequired, value: "required"},
 		{t: TokIden, value: "one"},
-		{t: TokErr, value: "@1abc"},
+		{t: TokErr, value: "@1abc", expected: TokOrd},
 		{t: TokIden, value: "b128"},
 		{t: TokTerminal, value: ";"},
 		{t: TokRBrace, value: "}"},
@@ -234,8 +234,32 @@ func TestLexer_BadComment(t *testing.T) {
 		{t: TokOrd, value: "@1"},
 		{t: TokIden, value: "Data"},
 		{t: TokTerminal, value: ";"},
-		{t: TokErr, value: "/#"},
-		{t: TokIden, value: "bad"},
+		{t: TokErr, value: "/# bad", expected: TokComment},
+		{t: TokRBrace, value: "}"},
+		{t: TokEof},
+	}
+
+	assert.Equal(t, expTokens, tokens)
+}
+
+func TestLexer_BadInteger(t *testing.T) {
+	input := `
+	message Data2 struct {
+		required one @1 [5a]Data;
+	}
+	`
+	tokens := runLexer(input)
+
+	expTokens := []TokVal{
+		{t: TokMessage, value: "message"},
+		{t: TokIden, value: "Data2"},
+		{t: TokStruct, value: "struct"},
+		{t: TokLBrace, value: "{"},
+		{t: TokRequired, value: "required"},
+		{t: TokIden, value: "one"},
+		{t: TokOrd, value: "@1"},
+		{t: TokIden, value: "Data"},
+		{t: TokTerminal, value: ";"},
 		{t: TokRBrace, value: "}"},
 		{t: TokEof},
 	}
