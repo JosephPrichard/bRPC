@@ -7,13 +7,12 @@ import (
 
 func runLexer(input string) []TokVal {
 	lex := newLexer(input)
-	go lex.run()
+	lex.run()
 
 	var tokens []TokVal
-	for token := range lex.tokens {
+	for _, token := range lex.tokens {
 		tokens = append(tokens, token.TokVal)
 	}
-
 	return tokens
 }
 
@@ -22,7 +21,7 @@ func TestLexer_Properties(t *testing.T) {
 	import "/path/to/idl/idl.brpc"
 
 	package = "/hello/\\\"world\""
-	constant = "value"
+	constant = "typValue"
 	`
 
 	tokens := runLexer(input)
@@ -35,7 +34,7 @@ func TestLexer_Properties(t *testing.T) {
 		{t: TokString, value: "\"/hello/\\\\\\\"world\\\"\""},
 		{t: TokIden, value: "constant"},
 		{t: TokEqual, value: "="},
-		{t: TokString, value: "\"value\""},
+		{t: TokString, value: "\"typValue\""},
 		{t: TokEof},
 	}
 	assert.Equal(t, expTokens, tokens)
@@ -65,14 +64,14 @@ func TestLexer_Struct(t *testing.T) {
 		{t: TokIden, value: "one"},
 		{t: TokOrd, value: "@1"},
 		{t: TokIden, value: "b128"},
-		{t: TokTerminal, value: ";"},
+		{t: TokSemicolon, value: ";"},
 		{t: TokRequired, value: "required"},
 		{t: TokIden, value: "two"},
 		{t: TokOrd, value: "@2"},
 		{t: TokLBrack, value: "["},
 		{t: TokRBrack, value: "]"},
 		{t: TokIden, value: "b5"},
-		{t: TokTerminal, value: ";"},
+		{t: TokSemicolon, value: ";"},
 		{t: TokOptional, value: "optional"},
 		{t: TokIden, value: "three"},
 		{t: TokOrd, value: "@3"},
@@ -80,7 +79,7 @@ func TestLexer_Struct(t *testing.T) {
 		{t: TokInteger, value: "16"},
 		{t: TokRBrack, value: "]"},
 		{t: TokIden, value: "b4"},
-		{t: TokTerminal, value: ";"},
+		{t: TokSemicolon, value: ";"},
 		{t: TokRBrace, value: "}"},
 		{t: TokMessage, value: "message"},
 		{t: TokIden, value: "Data2"},
@@ -95,12 +94,12 @@ func TestLexer_Struct(t *testing.T) {
 		{t: TokIden, value: "one"},
 		{t: TokOrd, value: "@1"},
 		{t: TokIden, value: "A"},
-		{t: TokTerminal, value: ";"},
+		{t: TokSemicolon, value: ";"},
 		{t: TokRequired, value: "required"},
 		{t: TokIden, value: "two"},
 		{t: TokOrd, value: "@2"},
 		{t: TokIden, value: "B"},
-		{t: TokTerminal, value: ";"},
+		{t: TokSemicolon, value: ";"},
 		{t: TokRBrace, value: "}"},
 		{t: TokEof},
 	}
@@ -126,13 +125,13 @@ func TestLexer_Union(t *testing.T) {
 		{t: TokLBrace, value: "{"},
 		{t: TokOrd, value: "@1"},
 		{t: TokIden, value: "One"},
-		{t: TokTerminal, value: ";"},
+		{t: TokSemicolon, value: ";"},
 		{t: TokOrd, value: "@2"},
 		{t: TokIden, value: "Two"},
-		{t: TokTerminal, value: ";"},
+		{t: TokSemicolon, value: ";"},
 		{t: TokOrd, value: "@3"},
 		{t: TokIden, value: "Three"},
-		{t: TokTerminal, value: ";"},
+		{t: TokSemicolon, value: ";"},
 		{t: TokRBrace, value: "}"},
 		{t: TokMessage, value: "message"},
 		{t: TokIden, value: "Data4"},
@@ -141,7 +140,7 @@ func TestLexer_Union(t *testing.T) {
 		{t: TokIden, value: "Data1"},
 		{t: TokPipe, value: "|"},
 		{t: TokIden, value: "Data2"},
-		{t: TokTerminal, value: ";"},
+		{t: TokSemicolon, value: ";"},
 		{t: TokEof},
 	}
 	assert.Equal(t, expTokens, tokens)
@@ -209,7 +208,7 @@ func TestLexer_BadOrd(t *testing.T) {
 		{t: TokIden, value: "one"},
 		{t: TokErr, value: "@1abc", expected: TokOrd},
 		{t: TokIden, value: "b128"},
-		{t: TokTerminal, value: ";"},
+		{t: TokSemicolon, value: ";"},
 		{t: TokRBrace, value: "}"},
 		{t: TokEof},
 	}
@@ -233,7 +232,7 @@ func TestLexer_BadComment(t *testing.T) {
 		{t: TokIden, value: "one"},
 		{t: TokOrd, value: "@1"},
 		{t: TokIden, value: "Data"},
-		{t: TokTerminal, value: ";"},
+		{t: TokSemicolon, value: ";"},
 		{t: TokErr, value: "/# bad", expected: TokComment},
 		{t: TokRBrace, value: "}"},
 		{t: TokEof},
@@ -258,8 +257,11 @@ func TestLexer_BadInteger(t *testing.T) {
 		{t: TokRequired, value: "required"},
 		{t: TokIden, value: "one"},
 		{t: TokOrd, value: "@1"},
+		{t: TokLBrack, value: "["},
+		{t: TokErr, value: "5a", expected: TokInteger},
+		{t: TokRBrack, value: "]"},
 		{t: TokIden, value: "Data"},
-		{t: TokTerminal, value: ";"},
+		{t: TokSemicolon, value: ";"},
 		{t: TokRBrace, value: "}"},
 		{t: TokEof},
 	}

@@ -4,25 +4,26 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
 
 type Parser struct {
-	tokens    chan Token
-	lastToken Token
-	hasToken  bool
+	tokens    []Token
+	curr      int
 	asts      []Ast
 	errs      []error
+	hasEofErr bool // stores whether an error has been emitted after token stream has reached eof
 }
 
-func newParser(tokens chan Token) Parser {
-	return Parser{tokens: tokens}
+func newParser(tokens []Token) Parser {
+	return Parser{tokens: tokens, hasEofErr: false}
 }
 
 func runParser(input string) ([]Ast, []error) {
 	lex := newLexer(input)
-	go lex.run()
+	lex.run()
 
 	p := newParser(lex.tokens)
 	p.parse()
@@ -30,54 +31,52 @@ func runParser(input string) ([]Ast, []error) {
 	return p.asts, p.errs
 }
 
-func (p *Parser) read() Token {
-	var token Token
-	if p.hasToken {
-		token = p.lastToken
-		p.lastToken = Token{}
-	} else {
-		token = <-p.tokens
+func (p *Parser) next() Token {
+	token := p.tokens[p.curr]
+	if token.t != TokEof {
+		p.curr++
 	}
-	p.hasToken = false
 	return token
 }
 
-func (p *Parser) consume() {
-	if p.hasToken {
-		p.lastToken = Token{}
-	} else {
-		<-p.tokens
+func (p *Parser) eat() {
+	if p.peek().t != TokEof {
+		p.curr++
 	}
-	p.hasToken = false
+}
+
+func (p *Parser) prev() {
+	p.curr--
+	if p.curr < 0 {
+		panic("assertion error: curr position in parser should never be less than 0")
+	}
 }
 
 func (p *Parser) peek() Token {
-	if p.hasToken {
-		return p.lastToken
-	} else {
-		p.lastToken = <-p.tokens
-		p.hasToken = true
-		return p.lastToken
-	}
+	return p.tokens[p.curr]
 }
 
-func (p *Parser) expect(expected TokType) (Token, error) {
-	token := p.read()
+func (p *Parser) expect(expected TokType) (Token, ParseError) {
+	token := p.next()
 	if expected == token.t {
 		return token, nil
 	}
-	return Token{}, expectErr(token, expected)
+	return Token{}, makeTokenErr(token, expected)
 }
 
-func (p *Parser) consumeIf(expected TokType) bool {
-	if token := p.peek(); token.t == expected {
-		p.consume()
-		return true
+func (p *Parser) eatWhile(expected TokType) (Token, bool) {
+	firstToken := p.peek()
+	ok := false
+	for p.peek().t == expected {
+		if !ok {
+			ok = true
+		}
+		p.eat()
 	}
-	return false
+	return firstToken, ok
 }
 
-func (p *Parser) expectChain(chain ...TokType) error {
+func (p *Parser) expectChain(chain ...TokType) ParseError {
 	for _, expected := range chain {
 		if _, err := p.expect(expected); err != nil {
 			return err
@@ -86,22 +85,39 @@ func (p *Parser) expectChain(chain ...TokType) error {
 	return nil
 }
 
-func (p *Parser) forwardSentinel(until ...TokType) {
+// EatTokens sentinel tokens which are eaten during forwarding
+var EatTokens = []TokType{TokSemicolon}
+
+// StopTokens sentinel tokens which are stopped at during forwarding
+var StopTokens = []TokType{TokLBrace, TokRBrace, TokRequired, TokOptional, TokMessage, TokStruct, TokUnion, TokEnum}
+
+func (p *Parser) forwardSentinel() {
 	for {
 		token := p.peek()
 		if token.t == TokEof {
 			return
 		}
-		for _, expected := range until {
-			if expected == token.t {
-				return
-			}
+		matchIdx := slices.Index(EatTokens, token.t)
+		if matchIdx != -1 {
+			p.eatWhile(EatTokens[matchIdx])
+			return
 		}
-		p.consume()
+		if slices.Index(StopTokens, token.t) != -1 {
+			return
+		}
+		p.eat()
 	}
 }
 
-var Eof = errors.New("reached end of token stream")
+func (p *Parser) appendErr(err error) {
+	if !p.hasEofErr {
+		// don't emit anymore errors if a single err has been emitted after reaching eof
+		p.errs = append(p.errs, err)
+	}
+	p.hasEofErr = p.peek().t == TokEof
+}
+
+var Eof = errors.New("reached end of token stream while parsing")
 
 func (p *Parser) parse() {
 	for {
@@ -110,19 +126,17 @@ func (p *Parser) parse() {
 			break
 		}
 		if err != nil {
-			p.errs = append(p.errs, err)
-			break
+			p.appendErr(err)
+			p.forwardSentinel()
 		}
-		if root == nil {
-			panic(fmt.Sprintf("assertion error: parsed root ast should never be nil"))
+		if root != nil {
+			p.asts = append(p.asts, root)
 		}
-		p.asts = append(p.asts, root)
 	}
 }
 
 func (p *Parser) parseRoot() (Ast, error) {
-	token := p.read()
-
+	token := p.next()
 	switch token.t {
 	case TokEof:
 		return nil, Eof
@@ -135,7 +149,7 @@ func (p *Parser) parseRoot() (Ast, error) {
 	case TokIden:
 		return p.parseProperty(token.value)
 	default:
-		return nil, expectErr(token, TokMessage, TokService)
+		return nil, makeTokenErr(token, TokMessage, TokService, TokImport, TokIden)
 	}
 }
 
@@ -143,9 +157,10 @@ func (p *Parser) parseProperty(name string) (Ast, error) {
 	var property PropertyAst
 	property.Name = name
 
-	handleErr := func(err error) (Ast, error) {
-		addAstKind(err, PropertyAstKind)
-		p.errs = append(p.errs, err)
+	handleErr := func(err ParseError) (Ast, ParseError) {
+		err.addKind(PropertyAstKind)
+		p.forwardSentinel()
+		p.appendErr(err)
 		return &property, nil
 	}
 
@@ -172,7 +187,7 @@ var EscSeqTable = map[rune]rune{
 	'"':  '"',
 }
 
-func (p *Parser) parseString(token *Token) (string, error) {
+func (p *Parser) parseString(token *Token) (string, ParseError) {
 	t, err := p.expect(TokString)
 	if err != nil {
 		return "", err
@@ -192,7 +207,7 @@ func (p *Parser) parseString(token *Token) (string, error) {
 		if isEscaped {
 			ch, ok := EscSeqTable[ch]
 			if !ok {
-				return "", parseErr(*token, fmt.Sprintf("invalid escape sequence: '/%c'", ch))
+				return "", makeParseErr(*token, fmt.Sprintf("invalid escape sequence: '/%c'", ch))
 			}
 			isEscaped = false
 			sb.WriteRune(ch)
@@ -210,12 +225,13 @@ func (p *Parser) parseString(token *Token) (string, error) {
 
 const BrpcExt = ".brpc"
 
-func (p *Parser) parseImport() (Ast, error) {
+func (p *Parser) parseImport() (Ast, ParseError) {
 	var imp ImportAst
 
-	handleErr := func(err error) (Ast, error) {
-		addAstKind(err, ImportAstKind)
-		p.errs = append(p.errs, err)
+	handleErr := func(err ParseError) (Ast, ParseError) {
+		err.addKind(ImportAstKind)
+		p.forwardSentinel()
+		p.appendErr(err)
 		return &imp, nil
 	}
 
@@ -228,13 +244,13 @@ func (p *Parser) parseImport() (Ast, error) {
 
 	ext := filepath.Ext(pathStr)
 	if ext != BrpcExt {
-		return handleErr(parseErr(token, fmt.Sprintf("import path must refer to a brpc file ending with extension: %s", BrpcExt)))
+		return handleErr(makeParseErr(token, fmt.Sprintf("import path must refer to a brpc file ending with extension: %s", BrpcExt)))
 	}
 
 	return &imp, nil
 }
 
-func (p *Parser) parseMessage() (Ast, error) {
+func (p *Parser) parseMessage() (Ast, ParseError) {
 	// invariant: assume that 'message' token has been consumed
 	token, err := p.expect(TokIden)
 	if err != nil {
@@ -245,29 +261,29 @@ func (p *Parser) parseMessage() (Ast, error) {
 	return p.parseType(name)
 }
 
-func (p *Parser) parseTypeArgs() ([]string, error) {
+func (p *Parser) parseTypeArgs() ([]string, ParseError) {
 	var typeArgs []string
 
-	token := p.read()
+	token := p.next()
 	switch token.t {
 	case TokLBrace:
 	case TokLParen:
 		for parsing := true; parsing; {
-			token := p.read()
+			token := p.next()
 			switch token.t {
 			case TokRParen:
 				parsing = false
 			case TokIden:
 				typeArgs = append(typeArgs, token.value)
 			default:
-				return nil, expectErr(token, TokRParen, TokIden)
+				return nil, makeTokenErr(token, TokRParen, TokIden)
 			}
 		}
 		if _, err := p.expect(TokLBrace); err != nil {
 			return nil, err
 		}
 	default:
-		return nil, expectErr(token, TokLBrace, TokLParen)
+		return nil, makeTokenErr(token, TokLBrace, TokLParen)
 	}
 
 	return typeArgs, nil
@@ -277,38 +293,40 @@ func (p *Parser) parseStruct(name string) Ast {
 	var strct StructAst
 	strct.Name = name
 
-	handleErr := func(err error) Ast {
-		addAstKind(err, StructAstKind)
-		p.errs = append(p.errs, err)
-		return &strct
+	handleErr := func(err ParseError) {
+		err.addKind(StructAstKind)
+		p.forwardSentinel()
+		p.appendErr(err)
 	}
 
 	typeArgs, err := p.parseTypeArgs()
 	if err != nil {
-		return handleErr(err)
+		handleErr(err)
+		return &strct
 	}
 	strct.TypeArgs = typeArgs
 
 	for {
-		token := p.peek()
+		token := p.next()
 		switch token.t {
 		case TokOptional, TokRequired:
+			p.prev()
 			field := p.parseField()
 			strct.Fields = append(strct.Fields, field)
 		case TokMessage:
-			p.consume()
 			message, err := p.parseMessage()
 			if err != nil {
-				_ = handleErr(err)
+				handleErr(err)
 				continue
 			}
 			strct.LocalDefs = append(strct.LocalDefs, message)
 		case TokRBrace:
-			p.consume()
 			return &strct
 		default:
-			p.consume()
-			return handleErr(expectErr(token, TokOptional, TokRequired, TokMessage, TokRBrace))
+			handleErr(makeTokenErr(token, TokOptional, TokRequired, TokMessage, TokRBrace))
+			if token.t == TokEof {
+				return &strct
+			}
 		}
 	}
 }
@@ -316,9 +334,10 @@ func (p *Parser) parseStruct(name string) Ast {
 func (p *Parser) parseOption() OptionAst {
 	var option OptionAst
 
-	handleErr := func(err error) OptionAst {
-		addAstKind(err, OptionAstKind)
-		p.errs = append(p.errs, err)
+	handleErr := func(err ParseError) OptionAst {
+		err.addKind(OptionAstKind)
+		p.forwardSentinel()
+		p.appendErr(err)
 		return option
 	}
 
@@ -334,8 +353,8 @@ func (p *Parser) parseOption() OptionAst {
 	}
 	option.Type = typ
 
-	if _, err := p.expect(TokTerminal); err != nil {
-		return handleErr(err)
+	if firstToken, ok := p.eatWhile(TokSemicolon); !ok {
+		return handleErr(makeTokenErr(firstToken, TokSemicolon))
 	}
 
 	return option
@@ -345,56 +364,58 @@ func (p *Parser) parseUnion(name string) Ast {
 	var union UnionAst
 	union.Name = name
 
-	handleErr := func(err error) Ast {
-		addAstKind(err, UnionAstKind)
-		p.errs = append(p.errs, err)
-		return &union
+	handleErr := func(err ParseError) {
+		err.addKind(UnionAstKind)
+		p.forwardSentinel()
+		p.appendErr(err)
 	}
 
 	typeArgs, err := p.parseTypeArgs()
 	if err != nil {
-		return handleErr(err)
+		handleErr(err)
+		return &union
 	}
 	union.TypeArgs = typeArgs
 
 	for {
-		token := p.peek()
+		token := p.next()
 		switch token.t {
 		case TokOrd:
+			p.prev()
 			option := p.parseOption()
 			union.Options = append(union.Options, option)
 		case TokMessage:
-			p.consume()
 			message, err := p.parseMessage()
 			if err != nil {
-				_ = handleErr(err)
+				handleErr(err)
 				continue
 			}
 			union.LocalDefs = append(union.LocalDefs, message)
 		case TokRBrace:
-			p.consume()
 			return &union
 		default:
-			p.consume()
-			return handleErr(expectErr(token, TokOrd, TokMessage, TokRBrace))
+			handleErr(makeTokenErr(token, TokOrd, TokMessage, TokRBrace))
+			if token.t == TokEof {
+				return &union
+			}
 		}
 
 	}
 }
 
-func (p *Parser) parseNumeric() (int64, error) {
+func (p *Parser) parseNumeric() (int64, ParseError) {
 	token, err := p.expect(TokInteger)
 	if err != nil {
 		return 0, err
 	}
-	value, err := strconv.ParseInt(token.value, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("%v: %s is not a valid integer", err, token.String())
+	value, convErr := strconv.ParseInt(token.value, 10, 64)
+	if convErr != nil {
+		return 0, makeParseErr(token, fmt.Sprintf("%v: %s is not a valid integer", err, token.String()))
 	}
 	return value, nil
 }
 
-func (p *Parser) parseCase() (EnumCase, error) {
+func (p *Parser) parseCase() (EnumCase, ParseError) {
 	var ec EnumCase
 
 	ord, err := p.parseOrd()
@@ -409,8 +430,8 @@ func (p *Parser) parseCase() (EnumCase, error) {
 	}
 	ec.Name = token.value
 
-	if _, err := p.expect(TokTerminal); err != nil {
-		return ec, err
+	if firstToken, ok := p.eatWhile(TokSemicolon); !ok {
+		return ec, makeTokenErr(firstToken, TokSemicolon)
 	}
 
 	return ec, nil
@@ -420,9 +441,10 @@ func (p *Parser) parseEnum(name string) Ast {
 	var enum EnumAst
 	enum.Name = name
 
-	handleErr := func(err error) Ast {
-		addAstKind(err, EnumAstKind)
-		p.errs = append(p.errs, err)
+	handleErr := func(err ParseError) Ast {
+		err.addKind(EnumAstKind)
+		p.forwardSentinel()
+		p.appendErr(err)
 		return &enum
 	}
 
@@ -430,9 +452,10 @@ func (p *Parser) parseEnum(name string) Ast {
 		return handleErr(err)
 	}
 	for {
-		token := p.peek()
+		token := p.next()
 		switch token.t {
 		case TokOrd:
+			p.prev()
 			ec, err := p.parseCase()
 			if err != nil {
 				_ = handleErr(err)
@@ -440,17 +463,18 @@ func (p *Parser) parseEnum(name string) Ast {
 			}
 			enum.Cases = append(enum.Cases, ec)
 		case TokRBrace:
-			p.consume()
 			return &enum
 		default:
-			p.consume()
-			return handleErr(expectErr(token, TokOrd, TokRBrace))
+			handleErr(makeTokenErr(token, TokOrd, TokRBrace))
+			if token.t == TokEof {
+				return &enum
+			}
 		}
 	}
 }
 
-func (p *Parser) ParseArrayPrefix() (uint64, error) {
-	token := p.read()
+func (p *Parser) parseArrayPrefix() (uint64, ParseError) {
+	token := p.next()
 	switch token.t {
 	case TokInteger:
 		if _, err := p.expect(TokRBrack); err != nil {
@@ -458,27 +482,27 @@ func (p *Parser) ParseArrayPrefix() (uint64, error) {
 		}
 		size, err := strconv.ParseUint(token.value, 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("%v: %s is not a valid array size", err, token.String())
+			return 0, makeParseErr(token, fmt.Sprintf("%v: %s is not a valid arrPrefix size", err, token.String()))
 		}
 		return size, nil
 	case TokRBrack:
 		return 0, nil
 	default:
-		return 0, expectErr(token, TokInteger, TokRBrack)
+		return 0, makeTokenErr(token, TokInteger, TokRBrack)
 	}
 }
 
-func (p *Parser) parseTypeInputs() ([]Ast, error) {
+func (p *Parser) parseTypeInputs() ([]Ast, ParseError) {
 	var typeArgs []Ast
 
 	if p.peek().t != TokLParen {
 		return typeArgs, nil
 	}
-	p.consume()
+	p.eat()
 
 	for {
 		if p.peek().t == TokRParen {
-			p.consume()
+			p.eat()
 			return typeArgs, nil
 		}
 		typ, err := p.parseType("")
@@ -489,55 +513,48 @@ func (p *Parser) parseTypeInputs() ([]Ast, error) {
 	}
 }
 
-func (p *Parser) parseType(name string) (Ast, error) {
-	var root Ast
-	var prevArray *ArrayAst
+func (p *Parser) parseType(name string) (Ast, ParseError) {
+	var array []uint64
 
-	appendAst := func(ast Ast) {
-		if root == nil {
-			root = ast
+	makeAst := func(typ Ast) Ast {
+		if array != nil {
+			return &ArrayAst{Type: typ, Size: array}
 		}
-		if prevArray != nil {
-			prevArray.Type = ast
-		}
-		typeArray, ok := ast.(*ArrayAst)
-		if ok {
-			prevArray = typeArray
-		}
+		return typ
 	}
 
 	for {
-		token := p.read()
+		token := p.next()
 		switch token.t {
 		case TokLBrack:
-			size, err := p.ParseArrayPrefix()
+			size, err := p.parseArrayPrefix()
 			if err != nil {
 				return nil, err
 			}
-			appendAst(&ArrayAst{Size: size})
+			array = append(array, size)
 		case TokIden:
 			typArgs, err := p.parseTypeInputs()
 			if err != nil {
 				return nil, err
 			}
-			appendAst(&TypeAst{Alias: name, Value: token.value, TypeArgs: typArgs})
-			return root, nil
+			ast := makeAst(&TypeAst{Alias: name, Iden: token.value, TypeArgs: typArgs})
+			return ast, nil
 		case TokStruct:
-			appendAst(p.parseStruct(name))
-			return root, nil
+			ast := makeAst(p.parseStruct(name))
+			return ast, nil
 		case TokUnion:
-			appendAst(p.parseUnion(name))
-			return root, nil
+			ast := makeAst(p.parseUnion(name))
+			return ast, nil
 		case TokEnum:
-			appendAst(p.parseEnum(name))
-			return root, nil
+			ast := makeAst(p.parseEnum(name))
+			return ast, nil
 		default:
-			return nil, expectErr(token, TokLBrack, TokIden, TokStruct, TokUnion, TokEnum)
+			return nil, makeParseErr(token, "<type>")
 		}
 	}
 }
 
-func (p *Parser) parseOrd() (uint64, error) {
+func (p *Parser) parseOrd() (uint64, ParseError) {
 	token, err := p.expect(TokOrd)
 	if err != nil {
 		return 0, err
@@ -545,33 +562,34 @@ func (p *Parser) parseOrd() (uint64, error) {
 	if len(token.value) < 2 {
 		panic(fmt.Errorf("assertion failed: an ord token should have at least 2 characters"))
 	}
-	ord, err := strconv.ParseUint(token.value[1:], 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("%v: %s is not a valid ord", err, token.String())
+	ord, strErr := strconv.ParseUint(token.value[1:], 10, 64)
+	if strErr != nil {
+		return 0, makeParseErr(token, fmt.Sprintf("%v: %s is not a valid ord", err, token.String()))
 	}
 	return ord, nil
 }
 
 func (p *Parser) parseField() FieldAst {
 	var token Token
-	var err error
+	var err ParseError
 	var ord uint64
 	var field FieldAst
 
-	handleErr := func(err error) FieldAst {
-		addAstKind(err, FieldAstKind)
-		p.errs = append(p.errs, err)
+	handleErr := func(err ParseError) FieldAst {
+		err.addKind(FieldAstKind)
+		p.forwardSentinel()
+		p.appendErr(err)
 		return field
 	}
 
-	token = p.read()
+	token = p.next()
 	switch token.t {
 	case TokRequired:
 		field.Modifier = Required
 	case TokOptional:
 		field.Modifier = Optional
 	default:
-		return handleErr(expectErr(token, TokRequired, TokOptional))
+		return handleErr(makeTokenErr(token, TokRequired, TokOptional))
 	}
 
 	if token, err = p.expect(TokIden); err != nil {
@@ -590,33 +608,36 @@ func (p *Parser) parseField() FieldAst {
 	}
 	field.Type = typ
 
-	if token, err = p.expect(TokTerminal); err != nil {
-		return handleErr(err)
+	if firstToken, ok := p.eatWhile(TokSemicolon); !ok {
+		return handleErr(makeTokenErr(firstToken, TokSemicolon))
 	}
 
 	return field
 }
 
-func (p *Parser) parseService() (Ast, error) {
+func (p *Parser) parseService() (Ast, ParseError) {
 	var svc ServiceAst
 
-	handleErr := func(err error) (Ast, error) {
-		addAstKind(err, ServiceAstKind)
-		p.errs = append(p.errs, err)
-		return &svc, nil
+	handleErr := func(err ParseError) {
+		err.addKind(ServiceAstKind)
+		p.forwardSentinel()
+		p.appendErr(err)
+
 	}
 
 	token, err := p.expect(TokIden)
 	if err != nil {
-		return handleErr(err)
+		handleErr(err)
+		return &svc, nil
 	}
 	svc.Name = token.value
 	if _, err := p.expect(TokLBrace); err != nil {
-		return handleErr(err)
+		handleErr(err)
+		return &svc, nil
 	}
 
 	for {
-		token = p.read()
+		token = p.next()
 		switch token.t {
 		case TokRpc:
 			rpc := p.parseRpc()
@@ -624,26 +645,29 @@ func (p *Parser) parseService() (Ast, error) {
 		case TokMessage:
 			message, err := p.parseMessage()
 			if err != nil {
-				_, _ = handleErr(err)
+				handleErr(err)
 				continue
 			}
 			svc.LocalDefs = append(svc.LocalDefs, message)
 		case TokRBrace:
 			return &svc, nil
 		default:
-			return handleErr(expectErr(token, TokRpc, TokMessage, TokRBrace))
+			handleErr(makeTokenErr(token, TokRpc, TokMessage, TokRBrace))
+			if token.t == TokEof {
+				return &svc, nil
+			}
 		}
 	}
 }
 
 func (p *Parser) parseRpc() RpcAst {
 	var token Token
-	var err error
+	var err ParseError
 	var rpc RpcAst
 
-	handleErr := func(err error) RpcAst {
-		addAstKind(err, RpcAstKind)
-		p.errs = append(p.errs, err)
+	handleErr := func(err ParseError) RpcAst {
+		err.addKind(RpcAstKind)
+		p.appendErr(err)
 		return rpc
 	}
 
@@ -683,56 +707,4 @@ func (p *Parser) parseRpc() RpcAst {
 	}
 
 	return rpc
-}
-
-func addAstKind(err error, kind AstKind) {
-	switch err.(type) {
-	case *ParseErr:
-		err.(*ParseErr).Within = kind
-	case *ExpectErr:
-		err.(*ExpectErr).Within = kind
-	}
-}
-
-type ParseErr struct {
-	Actual Token
-	Within AstKind
-	Msg    string
-}
-
-func (err ParseErr) Error() string {
-	return err.Msg + "at" + err.Actual.String()
-}
-
-func parseErr(actual Token, msg string) error {
-	return &ParseErr{Actual: actual, Msg: msg}
-}
-
-type ExpectErr struct {
-	Actual   Token
-	Within   AstKind
-	Expected []TokType
-}
-
-func (err ExpectErr) Error() string {
-	var sb strings.Builder
-
-	sb.WriteString("expected ")
-	for i, tok := range err.Expected {
-		sb.WriteString(tok.String())
-		if i == len(err.Expected)-2 {
-			sb.WriteString(" or ")
-		} else if i != len(err.Expected)-1 {
-			sb.WriteString(", ")
-		}
-	}
-
-	sb.WriteString(" but got ")
-	sb.WriteString(err.Actual.String())
-
-	return sb.String()
-}
-
-func expectErr(actual Token, expected ...TokType) error {
-	return &ExpectErr{Actual: actual, Expected: expected}
 }

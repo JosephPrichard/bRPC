@@ -12,7 +12,7 @@ const (
 type AstKind int
 
 const (
-	UnknownAstKind AstKind = iota
+	RootAstKind AstKind = iota
 	PropertyAstKind
 	ImportAstKind
 	StructAstKind
@@ -28,8 +28,8 @@ const (
 
 func (kind AstKind) String() string {
 	switch kind {
-	case UnknownAstKind:
-		return "<unknown>"
+	case RootAstKind:
+		return "<root>"
 	case PropertyAstKind:
 		return "<property>"
 	case ImportAstKind:
@@ -51,7 +51,7 @@ func (kind AstKind) String() string {
 	case TypeAstKind:
 		return "<type>"
 	case ArrayAstKind:
-		return "<array>"
+		return "<arrPrefix>"
 	default:
 		panic(fmt.Sprintf("assertion error: unknown AstKind: %d", kind))
 	}
@@ -71,6 +71,7 @@ type ImportAst struct {
 }
 
 type StructAst struct {
+	Table     *SymbolTable
 	Name      string // an empty string is an anonymous struct
 	Fields    []FieldAst
 	TypeArgs  []string
@@ -78,6 +79,7 @@ type StructAst struct {
 }
 
 type EnumAst struct {
+	Table *SymbolTable
 	Name  string // an empty string is an anonymous enum
 	Cases []EnumCase
 }
@@ -88,6 +90,7 @@ type EnumCase struct {
 }
 
 type UnionAst struct {
+	Table     *SymbolTable
 	Name      string // an empty string is an anonymous union
 	Options   []OptionAst
 	TypeArgs  []string
@@ -107,6 +110,7 @@ type OptionAst struct {
 }
 
 type ServiceAst struct {
+	Table      *SymbolTable
 	Name       string
 	Procedures []RpcAst
 	LocalDefs  []Ast
@@ -120,14 +124,15 @@ type RpcAst struct {
 }
 
 type TypeAst struct {
+	Table    *SymbolTable
 	Alias    string // an empty string is not an alias
-	Value    string
+	Iden     string
 	TypeArgs []Ast
 }
 
 type ArrayAst struct {
 	Type Ast
-	Size uint64 // 0 means the array is a dynamic array
+	Size []uint64 // 0 means the arr is a dynamic arr
 }
 
 func (ast *PropertyAst) Kind() AstKind { return PropertyAstKind }

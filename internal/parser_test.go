@@ -33,24 +33,20 @@ func TestParser_Alias(t *testing.T) {
 	asts, errs := runParser(input)
 
 	expectedAsts := []Ast{
-		&TypeAst{Alias: "Data", Value: "Data1"},
-		&ArrayAst{Type: &TypeAst{Alias: "BinaryArray", Value: "b64"}, Size: 6},
+		&TypeAst{Alias: "Data", Iden: "Data1"},
+		&ArrayAst{Type: &TypeAst{Alias: "BinaryArray", Iden: "b64"}, Size: []uint64{6}},
 		&ArrayAst{
 			Type: &TypeAst{
 				Alias: "Object",
-				Value: "Object1",
+				Iden:  "Object1",
 				TypeArgs: []Ast{
-					&TypeAst{Value: "BinaryArray"},
-					&ArrayAst{
-						Type: &TypeAst{Value: "Object3",
-							TypeArgs: []Ast{&TypeAst{Value: "b8"}},
-						},
-					},
-					&ArrayAst{Type: &TypeAst{Value: "b8"}, Size: 6},
-					&ArrayAst{Type: &TypeAst{Value: "b16"}},
+					&TypeAst{Iden: "BinaryArray"},
+					&ArrayAst{Type: &TypeAst{Iden: "Object3", TypeArgs: []Ast{&TypeAst{Iden: "b8"}}}, Size: []uint64{0}},
+					&ArrayAst{Type: &TypeAst{Iden: "b8"}, Size: []uint64{6}},
+					&ArrayAst{Type: &TypeAst{Iden: "b16"}, Size: []uint64{0}},
 				},
 			},
-			Size: 4,
+			Size: []uint64{4},
 		},
 	}
 
@@ -64,16 +60,16 @@ func TestParser_Struct(t *testing.T) {
 		required one @1 b128; // this is the first comment
 		required two @2 []b5; // this is the second comment
 		optional three @3 [16]b4;
-		optional four @4 [][4][]b4;
+		optional four @4 [][4][]b4;;;
 		required five @5 struct{ 
-			required one @1 b16;
+			required one @1 b16;;
         };
 
 		message Data2 struct {
 			required one @1 Data3;
 	
 			message Data3 struct(A B) {
-				required one @1 A;
+				required one @1 A;;;
 				required two @2 B;
 			}
 		}
@@ -85,36 +81,31 @@ func TestParser_Struct(t *testing.T) {
 		&StructAst{
 			Name: "Data1",
 			Fields: []FieldAst{
-				{Modifier: Required, Name: "one", Ord: 1, Type: &TypeAst{Value: "b128"}},
+				{Modifier: Required, Name: "one", Ord: 1, Type: &TypeAst{Iden: "b128"}},
 				{
 					Modifier: Required,
 					Name:     "two",
 					Ord:      2,
-					Type:     &ArrayAst{Type: &TypeAst{Value: "b5"}},
+					Type:     &ArrayAst{Type: &TypeAst{Iden: "b5"}, Size: []uint64{0}},
 				},
 				{
 					Modifier: Optional,
 					Name:     "three",
 					Ord:      3,
-					Type:     &ArrayAst{Type: &TypeAst{Value: "b4"}, Size: 16},
+					Type:     &ArrayAst{Type: &TypeAst{Iden: "b4"}, Size: []uint64{16}},
 				},
 				{
 					Modifier: Optional,
 					Name:     "four",
 					Ord:      4,
-					Type: &ArrayAst{
-						Type: &ArrayAst{
-							Type: &ArrayAst{Type: &TypeAst{Value: "b4"}},
-							Size: 4,
-						},
-					},
+					Type:     &ArrayAst{Type: &TypeAst{Iden: "b4"}, Size: []uint64{0, 4, 0}},
 				},
 				{
 					Modifier: Required,
 					Name:     "five",
 					Ord:      5,
 					Type: &StructAst{
-						Fields: []FieldAst{{Modifier: Required, Name: "one", Ord: 1, Type: &TypeAst{Value: "b16"}}},
+						Fields: []FieldAst{{Modifier: Required, Name: "one", Ord: 1, Type: &TypeAst{Iden: "b16"}}},
 					},
 				},
 			},
@@ -122,15 +113,15 @@ func TestParser_Struct(t *testing.T) {
 				&StructAst{
 					Name: "Data2",
 					Fields: []FieldAst{
-						{Modifier: Required, Name: "one", Ord: 1, Type: &TypeAst{Value: "Data3"}},
+						{Modifier: Required, Name: "one", Ord: 1, Type: &TypeAst{Iden: "Data3"}},
 					},
 					LocalDefs: []Ast{
 						&StructAst{
 							Name:     "Data3",
 							TypeArgs: []string{"A", "B"},
 							Fields: []FieldAst{
-								{Modifier: Required, Name: "one", Ord: 1, Type: &TypeAst{Value: "A"}},
-								{Modifier: Required, Name: "two", Ord: 2, Type: &TypeAst{Value: "B"}},
+								{Modifier: Required, Name: "one", Ord: 1, Type: &TypeAst{Iden: "A"}},
+								{Modifier: Required, Name: "two", Ord: 2, Type: &TypeAst{Iden: "B"}},
 							},
 						},
 					},
@@ -146,9 +137,9 @@ func TestParser_Struct(t *testing.T) {
 func TestParser_Enum(t *testing.T) {
 	input := `
 	message Data1 enum {
-		@1 One;
+		@1 One;;
 		@2 Two;
-		@3 Three;
+		@3 Three;;;
 	}
 	`
 	asts, errs := runParser(input)
@@ -176,7 +167,7 @@ func TestParser_Union(t *testing.T) {
 		@3 Data;
 
 		message Data union() { 
-			@1 B;
+			@1 B;;;
 			@2 C;
         }
 	}
@@ -193,18 +184,18 @@ func TestParser_Union(t *testing.T) {
 					Ord: 2,
 					Type: &StructAst{
 						Fields: []FieldAst{
-							{Modifier: Required, Name: "one", Ord: 1, Type: &TypeAst{Value: "A"}},
+							{Modifier: Required, Name: "one", Ord: 1, Type: &TypeAst{Iden: "A"}},
 						},
 					},
 				},
-				{Ord: 3, Type: &TypeAst{Value: "Data"}},
+				{Ord: 3, Type: &TypeAst{Iden: "Data"}},
 			},
 			LocalDefs: []Ast{
 				&UnionAst{
 					Name: "Data",
 					Options: []OptionAst{
-						{Ord: 1, Type: &TypeAst{Value: "B"}},
-						{Ord: 2, Type: &TypeAst{Value: "C"}},
+						{Ord: 1, Type: &TypeAst{Iden: "B"}},
+						{Ord: 2, Type: &TypeAst{Iden: "C"}},
 					},
 				},
 			},
@@ -218,10 +209,10 @@ func TestParser_Union(t *testing.T) {
 func TestParser_Service(t *testing.T) {
 	input := `
 	service ServiceA {
-		rpc @1 Hello(Input) returns (Output)
+		rpc @1 Hello(Test) returns (Output)
 		rpc @2 World(struct{}) returns (enum{ @1 One; @2 Two; @3 Three; })
 
-		message Input struct {
+		message Test struct {
 			required one @1 b24;
 		}
 	}
@@ -232,7 +223,7 @@ func TestParser_Service(t *testing.T) {
 		&ServiceAst{
 			Name: "ServiceA",
 			Procedures: []RpcAst{
-				{Ord: 1, Name: "Hello", Arg: &TypeAst{Value: "Input"}, Ret: &TypeAst{Value: "Output"}},
+				{Ord: 1, Name: "Hello", Arg: &TypeAst{Iden: "Test"}, Ret: &TypeAst{Iden: "Output"}},
 				{
 					Ord:  2,
 					Name: "World",
@@ -248,9 +239,9 @@ func TestParser_Service(t *testing.T) {
 			},
 			LocalDefs: []Ast{
 				&StructAst{
-					Name: "Input",
+					Name: "Test",
 					Fields: []FieldAst{
-						{Modifier: Required, Name: "one", Ord: 1, Type: &TypeAst{Value: "b24"}},
+						{Modifier: Required, Name: "one", Ord: 1, Type: &TypeAst{Iden: "b24"}},
 					},
 				},
 			},
@@ -259,4 +250,83 @@ func TestParser_Service(t *testing.T) {
 
 	assert.Equal(t, expectedAsts, asts)
 	assert.Nil(t, errs)
+}
+
+func TestParser_Errors(t *testing.T) {
+	type Test struct {
+		input string
+		asts  []Ast
+		errs  []error
+	}
+
+	tests := []Test{
+		{
+			input: `
+			message Data1 struct {
+				required one @1 b128;
+			`,
+		},
+		{
+			input: `
+			message Data1 struct {
+				message Data2 struct {
+			`,
+		},
+		{
+			input: `
+			message Data1 struct {
+				required one @1abc b128;
+				two @2abc []b5;
+		
+				message Data2 struct {
+					required one @1;
+				}
+			}
+		
+			message Data3 struct {
+				required one @1;
+
+				message Data4 union {
+					@1 One;
+					Two;
+				}
+			}
+
+			message Data4 enum {
+				@1 ONE;
+				TWO;
+			}
+			`,
+		},
+		{
+			input: `
+			message Data struct {
+				required one one one one one @1 b128;
+				two two two two two @2 []b5;
+				required three @3 b128
+			}
+			`,
+		},
+		{
+			input: `
+			service Data {
+				rpc @1 Hello(Test) returns (Output)
+				required one @1 b128;
+				rpc @2 World(Test1) returns (Output1)
+			}
+			`,
+		},
+	}
+
+	for _, test := range tests {
+		asts, errs := runParser(test.input)
+
+		printLine := func(err string) {
+			t.Log(err)
+		}
+		printErrors(errs, "test.brpc", printLine)
+
+		assert.Equal(t, test.asts, asts)
+		assert.Equal(t, test.errs, errs)
+	}
 }

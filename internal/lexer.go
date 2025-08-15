@@ -8,13 +8,14 @@ import (
 )
 
 const (
-	TokErr TokType = iota
+	TokUnknown TokType = iota
+	TokErr
 	TokEof
 	TokIden
 	TokInteger
 	TokString
 	TokOrd
-	TokTerminal
+	TokSemicolon
 	TokComma
 	TokLBrace
 	TokRBrace
@@ -53,7 +54,7 @@ func (t TokType) String() string {
 		return "<string>"
 	case TokOrd:
 		return "<ord>"
-	case TokTerminal:
+	case TokSemicolon:
 		return "';'"
 	case TokComma:
 		return "','"
@@ -107,43 +108,52 @@ type TokVal struct {
 }
 
 func (t TokVal) String() string {
-	return t.value
+	switch t.t {
+	case TokUnknown:
+		return "<unknown>"
+	case TokEof:
+		return "<eof>"
+	default:
+		return t.value
+	}
 }
 
 type Token struct {
 	TokVal
-	startRow int
-	startCol int
-	endRow   int
-	endCol   int
+	beg int
+	end int
 }
 
 func (t Token) String() string {
-	return fmt.Sprintf("'%s' at %d,%d:%d,%d", t.TokVal.String(), t.startRow, t.startCol, t.endRow, t.endCol)
+	return fmt.Sprintf("'%s'", t.TokVal.String())
+}
+
+func (t Token) FormatPosition() string {
+	if t.beg == t.end {
+		return fmt.Sprintf("%d: ", t.beg)
+	} else {
+		return fmt.Sprintf("%d:%d: ", t.beg, t.end)
+	}
 }
 
 type Lexer struct {
-	input    string
-	prev     rune
-	curr     int
-	currCol  int
-	currRow  int
-	start    int
-	startCol int
-	startRow int
-	width    int
-	tokens   chan Token
+	input  string
+	prev   rune
+	curr   int
+	start  int
+	width  int
+	tokens []Token
 }
 
 const eof = 0
 
 func newLexer(input string) Lexer {
-	return Lexer{input: input, tokens: make(chan Token), startCol: 1, startRow: 1, currCol: 1, currRow: 1}
+	return Lexer{input: input, tokens: make([]Token, 0)}
 }
 
 func (lex *Lexer) emit(tok TokType) {
 	val := lex.input[lex.start:lex.curr]
-	lex.tokens <- Token{TokVal: TokVal{t: tok, value: val}, startRow: lex.startRow, startCol: lex.startCol, endRow: lex.currRow, endCol: lex.currCol}
+	lex.tokens = append(lex.tokens, Token{TokVal: TokVal{t: tok, value: val}, beg: lex.start, end: lex.curr})
 	lex.skip()
 }
 
@@ -174,7 +184,7 @@ func (lex *Lexer) emitText() {
 		tok = TokImport
 	}
 
-	lex.tokens <- Token{TokVal: TokVal{t: tok, value: str}, startRow: lex.startRow, startCol: lex.startCol, endRow: lex.currRow, endCol: lex.currCol}
+	lex.tokens = append(lex.tokens, Token{TokVal: TokVal{t: tok, value: str}, beg: lex.start, end: lex.curr})
 	lex.skip()
 }
 
@@ -193,24 +203,16 @@ func (lex *Lexer) emitErr(expected TokType) {
 
 	val := lex.input[lex.start:lex.curr]
 	token := Token{
-		TokVal:   TokVal{t: TokErr, value: val, expected: expected},
-		startRow: lex.startRow,
-		startCol: lex.startCol,
-		endRow:   lex.currRow,
-		endCol:   lex.currCol,
+		TokVal: TokVal{t: TokErr, value: val, expected: expected},
+		beg:    lex.start,
+		end:    lex.curr,
 	}
-	lex.tokens <- token
+	lex.tokens = append(lex.tokens, token)
 	lex.skip()
 }
 
 func (lex *Lexer) consume() {
 	lex.curr += lex.width
-	if lex.prev == '\n' {
-		lex.currCol = 1
-		lex.currRow++
-	} else {
-		lex.currCol++
-	}
 }
 
 func (lex *Lexer) peek() rune {
@@ -230,8 +232,6 @@ func (lex *Lexer) next() (r rune) {
 
 func (lex *Lexer) skip() {
 	lex.start = lex.curr
-	lex.startRow = lex.currRow
-	lex.startCol = lex.currCol
 }
 
 func (lex *Lexer) accept(valid string) bool {
@@ -275,7 +275,6 @@ const whitespace = " \t\r\n\f"
 const newline = "\r\n"
 
 func (lex *Lexer) run() {
-	defer close(lex.tokens)
 	for hasNext := true; hasNext; {
 		hasNext = lex.lex()
 	}
@@ -367,7 +366,7 @@ func (lex *Lexer) lex() bool {
 	case ']':
 		lex.emitNext(TokRBrack)
 	case ';':
-		lex.emitNext(TokTerminal)
+		lex.emitNext(TokSemicolon)
 	case ',':
 		lex.emitNext(TokComma)
 	case '|':
@@ -384,7 +383,7 @@ func (lex *Lexer) lex() bool {
 		} else if !unicode.IsControl(ch) && !unicode.IsPunct(ch) && !unicode.IsSpace(ch) {
 			lex.lexText()
 		} else {
-			lex.emitErr(0)
+			lex.emitErr(TokUnknown)
 		}
 	}
 	return true
