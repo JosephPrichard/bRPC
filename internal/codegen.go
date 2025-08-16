@@ -29,7 +29,7 @@ func makeTables(asts []Ast, prev *SymbolTable, errs *[]error) {
 	insertAst := func(iden string, ast Ast) {
 		_, ok := table.m[iden]
 		if ok {
-			*errs = append(*errs, &AstErr{ast: ast, msg:  fmt.Sprintf("'%s' is redefined", iden)})
+			*errs = append(*errs, &AstErr{ast: ast, msg: fmt.Sprintf("'%s' is redefined", iden)})
 		}
 		table.m[iden] = ast
 	}
@@ -50,11 +50,11 @@ func makeTables(asts []Ast, prev *SymbolTable, errs *[]error) {
 			ast.Table = table
 			insertAst(ast.Name, ast)
 			makeTables(ast.LocalDefs, table, errs)
-		case *TypeAst:
+		case *TypRefAst:
 			ast.Table = table
 			insertAst(ast.Alias, ast)
-		case *ArrayAst:
-			if typ, ok := ast.Type.(*TypeAst); ok {
+		case *TypArrAst:
+			if typ, ok := ast.Type.(*TypRefAst); ok {
 				typ.Table = table
 				insertAst(typ.Alias, ast)
 			} else {

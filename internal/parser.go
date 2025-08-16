@@ -58,10 +58,11 @@ func (p *Parser) peek() Token {
 
 func (p *Parser) expect(expected TokType) (Token, ParseError) {
 	token := p.next()
-	if expected == token.t {
-		return token, nil
+	var err ParseError
+	if expected != token.t {
+		err = makeTokenErr(token, expected)
 	}
-	return token, makeTokenErr(token, expected)
+	return token, err
 }
 
 func (p *Parser) eatWhile(expected TokType) (Token, bool) {
@@ -279,8 +280,8 @@ func (p *Parser) parseMessage() (Ast, ParseError) {
 	return p.parseType(name)
 }
 
-func (p *Parser) parseTypeArgs() ([]string, ParseError) {
-	var typeArgs []string
+func (p *Parser) parseTypeParams() ([]string, ParseError) {
+	var typeParams []string
 
 	token := p.next()
 	switch token.t {
@@ -292,7 +293,7 @@ func (p *Parser) parseTypeArgs() ([]string, ParseError) {
 			case TokRParen:
 				parsing = false
 			case TokIden:
-				typeArgs = append(typeArgs, token.value)
+				typeParams = append(typeParams, token.value)
 			default:
 				return nil, makeTokenErr(token, TokRParen, TokIden)
 			}
@@ -304,7 +305,7 @@ func (p *Parser) parseTypeArgs() ([]string, ParseError) {
 		return nil, makeTokenErr(token, TokLBrace, TokLParen)
 	}
 
-	return typeArgs, nil
+	return typeParams, nil
 }
 
 func (p *Parser) parseStruct(name string) Ast {
@@ -324,12 +325,12 @@ func (p *Parser) parseStruct(name string) Ast {
 	}
 	strct.B = token
 
-	typeArgs, err := p.parseTypeArgs()
+	typeArgs, err := p.parseTypeParams()
 	if err != nil {
 		handleErr(err)
 		return &strct
 	}
-	strct.TypeArgs = typeArgs
+	strct.TypeParams = typeArgs
 
 	for {
 		token := p.next()
@@ -406,12 +407,12 @@ func (p *Parser) parseUnion(name string) Ast {
 	}
 	union.B = token
 
-	typeArgs, err := p.parseTypeArgs()
+	typeArgs, err := p.parseTypeParams()
 	if err != nil {
 		handleErr(err)
 		return &union
 	}
-	union.TypeArgs = typeArgs
+	union.TypeParams = typeArgs
 
 	for {
 		token := p.next()
@@ -518,7 +519,7 @@ func (p *Parser) parseEnum(name string) Ast {
 	}
 }
 
-func (p *Parser) parseArrayPrefix() (uint64, ParseError) {
+func (p *Parser) parseArraySize() (uint64, ParseError) {
 	token := p.next()
 	switch token.t {
 	case TokInteger:
@@ -537,7 +538,7 @@ func (p *Parser) parseArrayPrefix() (uint64, ParseError) {
 	}
 }
 
-func (p *Parser) parseTypeInputs() ([]Ast, ParseError) {
+func (p *Parser) parseTypeArgs(token *Token) ([]Ast, ParseError) {
 	var typeArgs []Ast
 
 	if p.peek().t != TokLParen {
@@ -547,7 +548,7 @@ func (p *Parser) parseTypeInputs() ([]Ast, ParseError) {
 
 	for {
 		if p.peek().t == TokRParen {
-			p.eat()
+			*token = p.next()
 			return typeArgs, nil
 		}
 		typ, err := p.parseType("")
@@ -560,10 +561,12 @@ func (p *Parser) parseTypeInputs() ([]Ast, ParseError) {
 
 func (p *Parser) parseType(name string) (Ast, ParseError) {
 	var array []uint64
+	var arrTokenB Token
 
 	makeAst := func(typ Ast) Ast {
 		if array != nil {
-			return &ArrayAst{Type: typ, Size: array}
+			// an array's last token is the same as it's leaf ast (since a type is nested inside an array)
+			return &TypArrAst{Type: typ, Size: array, Markers: Markers{B: arrTokenB, E: typ.End()}}
 		}
 		return typ
 	}
@@ -572,19 +575,23 @@ func (p *Parser) parseType(name string) (Ast, ParseError) {
 		token := p.peek()
 		switch token.t {
 		case TokLBrack:
+			if arrTokenB.t == TokUnknown {
+				arrTokenB = token
+			}
 			p.eat()
-			size, err := p.parseArrayPrefix()
+			size, err := p.parseArraySize()
 			if err != nil {
 				return nil, err
 			}
 			array = append(array, size)
 		case TokIden:
-			p.eat()
-			typArgs, err := p.parseTypeInputs()
+			tokenB := p.next()
+			tokenE := tokenB
+			typeArgs, err := p.parseTypeArgs(&tokenE)
 			if err != nil {
 				return nil, err
 			}
-			ast := makeAst(&TypeAst{Alias: name, Iden: token.value, TypeArgs: typArgs})
+			ast := makeAst(&TypRefAst{Alias: name, Iden: tokenB.value, TypeArgs: typeArgs, Markers: Markers{B: tokenB, E: tokenE}})
 			return ast, nil
 		case TokStruct:
 			ast := makeAst(p.parseStruct(name))

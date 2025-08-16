@@ -61,34 +61,43 @@ type Ast interface {
 	Kind() AstKind
 	Begin() Token
 	End() Token
+	Clear()
+}
+
+type Markers struct {
+	B Token
+	E Token
+}
+
+func makeMarkers(tB TokType, vB string, tE TokType, vE string) Markers {
+	return Markers{
+		B: Token{TokVal: TokVal{t: tB, value: vB}},
+		E: Token{TokVal: TokVal{t: tE, value: vE}},
+	}
 }
 
 type PropertyAst struct {
-	B     Token
-	E     Token
+	Markers
 	Name  string
 	Value string
 }
 
 type ImportAst struct {
-	B    Token
-	E    Token
+	Markers
 	Path string
 }
 
 type StructAst struct {
-	B         Token
-	E         Token
-	Table     *SymbolTable
-	Name      string // an empty string is an anonymous struct
-	Fields    []FieldAst
-	TypeArgs  []string
-	LocalDefs []Ast
+	Markers
+	Table      *SymbolTable
+	Name       string // an empty string is an anonymous struct
+	Fields     []FieldAst
+	TypeParams []string
+	LocalDefs  []Ast
 }
 
 type EnumAst struct {
-	B     Token
-	E     Token
+	Markers
 	Table *SymbolTable
 	Name  string // an empty string is an anonymous enum
 	Cases []EnumCase
@@ -100,18 +109,16 @@ type EnumCase struct {
 }
 
 type UnionAst struct {
-	B         Token
-	E         Token
-	Table     *SymbolTable
-	Name      string // an empty string is an anonymous union
-	Options   []OptionAst
-	TypeArgs  []string
-	LocalDefs []Ast
+	Markers
+	Table      *SymbolTable
+	Name       string // an empty string is an anonymous union
+	Options    []OptionAst
+	TypeParams []string
+	LocalDefs  []Ast
 }
 
 type FieldAst struct {
-	B        Token
-	E        Token
+	Markers
 	Modifier Modifier
 	Name     string
 	Type     Ast
@@ -119,15 +126,13 @@ type FieldAst struct {
 }
 
 type OptionAst struct {
-	B    Token
-	E    Token
+	Markers
 	Type Ast
 	Ord  uint64
 }
 
 type ServiceAst struct {
-	B          Token
-	E          Token
+	Markers
 	Table      *SymbolTable
 	Name       string
 	Procedures []RpcAst
@@ -135,28 +140,25 @@ type ServiceAst struct {
 }
 
 type RpcAst struct {
-	B    Token
-	E    Token
+	Markers
 	Name string
 	Ord  uint64
 	Arg  Ast
 	Ret  Ast
 }
 
-type TypeAst struct {
-	B        Token
-	E        Token
+type TypRefAst struct {
+	Markers
 	Table    *SymbolTable
 	Alias    string // an empty string is not an alias
 	Iden     string
 	TypeArgs []Ast
 }
 
-type ArrayAst struct {
-	B    Token
-	E    Token
+type TypArrAst struct {
+	Markers
 	Type Ast
-	Size []uint64 // 0 means the arr is a dynamic arr
+	Size []uint64 // 0 means the array is a dynamic array
 }
 
 func (ast *PropertyAst) Kind() AstKind { return PropertyAstKind }
@@ -168,29 +170,15 @@ func (ast *ServiceAst) Kind() AstKind  { return ServiceAstKind }
 func (ast *RpcAst) Kind() AstKind      { return RpcAstKind }
 func (ast *OptionAst) Kind() AstKind   { return OptionAstKind }
 func (ast *FieldAst) Kind() AstKind    { return FieldAstKind }
-func (ast *TypeAst) Kind() AstKind     { return TypeAstKind }
-func (ast *ArrayAst) Kind() AstKind    { return ArrayAstKind }
+func (ast *TypRefAst) Kind() AstKind   { return TypeAstKind }
+func (ast *TypArrAst) Kind() AstKind   { return ArrayAstKind }
 
-func (ast *PropertyAst) Begin() Token { return ast.B }
-func (ast *ImportAst) Begin() Token   { return ast.B }
-func (ast *StructAst) Begin() Token   { return ast.B }
-func (ast *EnumAst) Begin() Token     { return ast.B }
-func (ast *UnionAst) Begin() Token    { return ast.B }
-func (ast *ServiceAst) Begin() Token  { return ast.B }
-func (ast *RpcAst) Begin() Token      { return ast.B }
-func (ast *OptionAst) Begin() Token   { return ast.B }
-func (ast *FieldAst) Begin() Token    { return ast.B }
-func (ast *TypeAst) Begin() Token     { return ast.B }
-func (ast *ArrayAst) Begin() Token    { return ast.B }
-
-func (ast *PropertyAst) End() Token { return ast.E }
-func (ast *ImportAst) End() Token   { return ast.E }
-func (ast *StructAst) End() Token   { return ast.E }
-func (ast *EnumAst) End() Token     { return ast.E }
-func (ast *UnionAst) End() Token    { return ast.E }
-func (ast *ServiceAst) End() Token  { return ast.E }
-func (ast *RpcAst) End() Token      { return ast.E }
-func (ast *OptionAst) End() Token   { return ast.E }
-func (ast *FieldAst) End() Token    { return ast.E }
-func (ast *TypeAst) End() Token     { return ast.E }
-func (ast *ArrayAst) End() Token    { return ast.E }
+func (m *Markers) Begin() Token { return m.B }
+func (m *Markers) End() Token   { return m.E }
+func (m *Markers) Clear() {
+	// clears positional marker information, useful for testing - we don't really care to assert this information since it changes very frequently
+	m.B.beg = 0
+	m.B.end = 0
+	m.E.beg = 0
+	m.E.end = 0
+}

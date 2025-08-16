@@ -124,10 +124,6 @@ type Token struct {
 	end int
 }
 
-func makeToken(t TokType, value string, beg int, end int) Token {
-	return Token{TokVal: TokVal{t: t, value: value}, beg: beg, end: end}
-}
-
 func (t Token) String() string {
 	return fmt.Sprintf("'%s'", t.TokVal.String())
 }
