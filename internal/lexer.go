@@ -97,7 +97,7 @@ func (t TokType) String() string {
 	case TokComment:
 		return "'//'"
 	default:
-		panic(fmt.Sprintf("assertion error: unknown token: %d", t))
+		panic(fmt.Sprintf("assertion error: unknown begin: %d", t))
 	}
 }
 
@@ -124,6 +124,10 @@ type Token struct {
 	end int
 }
 
+func makeToken(t TokType, value string, beg int, end int) Token {
+	return Token{TokVal: TokVal{t: t, value: value}, beg: beg, end: end}
+}
+
 func (t Token) String() string {
 	return fmt.Sprintf("'%s'", t.TokVal.String())
 }
@@ -147,7 +151,7 @@ type Lexer struct {
 
 const eof = 0
 
-func newLexer(input string) Lexer {
+func makeLexer(input string) Lexer {
 	return Lexer{input: input, tokens: make([]Token, 0)}
 }
 

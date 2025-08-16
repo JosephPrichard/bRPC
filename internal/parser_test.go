@@ -15,9 +15,23 @@ func TestParser_Properties(t *testing.T) {
 	asts, errs := runParser(input)
 
 	expectedAsts := []Ast{
-		&ImportAst{Path: "/path/to/idl/file.brpc"},
-		&PropertyAst{Name: "package", Value: "/hello/\\\"world\""},
-		&PropertyAst{Name: "constant", Value: "value"},
+		&ImportAst{
+			Path: "/path/to/idl/file.brpc",
+			B:    makeToken(TokImport, "import", 2, 8),
+			E:    makeToken(TokString, "\"/path/to/idl/file.brpc\"", 9, 33),
+		},
+		&PropertyAst{
+			Name:  "package",
+			Value: "/hello/\\\"world\"",
+			B:     makeToken(TokIden, "package", 36, 43),
+			E:     makeToken(TokString, "\"/hello/\\\\\\\"world\\\"\"", 46, 66),
+		},
+		&PropertyAst{
+			Name:  "constant",
+			Value: "value",
+			B:     makeToken(TokIden, "constant", 68, 76),
+			E:     makeToken(TokString, "\"value\"", 79, 86),
+		},
 	}
 
 	assert.Equal(t, expectedAsts, asts)

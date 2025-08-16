@@ -6,7 +6,7 @@ import (
 )
 
 func runLexer(input string) []TokVal {
-	lex := newLexer(input)
+	lex := makeLexer(input)
 	lex.run()
 
 	var tokens []TokVal

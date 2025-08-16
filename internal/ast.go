@@ -59,18 +59,26 @@ func (kind AstKind) String() string {
 
 type Ast interface {
 	Kind() AstKind
+	Begin() Token
+	End() Token
 }
 
 type PropertyAst struct {
+	B     Token
+	E     Token
 	Name  string
 	Value string
 }
 
 type ImportAst struct {
+	B    Token
+	E    Token
 	Path string
 }
 
 type StructAst struct {
+	B         Token
+	E         Token
 	Table     *SymbolTable
 	Name      string // an empty string is an anonymous struct
 	Fields    []FieldAst
@@ -79,6 +87,8 @@ type StructAst struct {
 }
 
 type EnumAst struct {
+	B     Token
+	E     Token
 	Table *SymbolTable
 	Name  string // an empty string is an anonymous enum
 	Cases []EnumCase
@@ -90,6 +100,8 @@ type EnumCase struct {
 }
 
 type UnionAst struct {
+	B         Token
+	E         Token
 	Table     *SymbolTable
 	Name      string // an empty string is an anonymous union
 	Options   []OptionAst
@@ -98,6 +110,8 @@ type UnionAst struct {
 }
 
 type FieldAst struct {
+	B        Token
+	E        Token
 	Modifier Modifier
 	Name     string
 	Type     Ast
@@ -105,11 +119,15 @@ type FieldAst struct {
 }
 
 type OptionAst struct {
+	B    Token
+	E    Token
 	Type Ast
 	Ord  uint64
 }
 
 type ServiceAst struct {
+	B          Token
+	E          Token
 	Table      *SymbolTable
 	Name       string
 	Procedures []RpcAst
@@ -117,6 +135,8 @@ type ServiceAst struct {
 }
 
 type RpcAst struct {
+	B    Token
+	E    Token
 	Name string
 	Ord  uint64
 	Arg  Ast
@@ -124,6 +144,8 @@ type RpcAst struct {
 }
 
 type TypeAst struct {
+	B        Token
+	E        Token
 	Table    *SymbolTable
 	Alias    string // an empty string is not an alias
 	Iden     string
@@ -131,6 +153,8 @@ type TypeAst struct {
 }
 
 type ArrayAst struct {
+	B    Token
+	E    Token
 	Type Ast
 	Size []uint64 // 0 means the arr is a dynamic arr
 }
@@ -146,3 +170,27 @@ func (ast *OptionAst) Kind() AstKind   { return OptionAstKind }
 func (ast *FieldAst) Kind() AstKind    { return FieldAstKind }
 func (ast *TypeAst) Kind() AstKind     { return TypeAstKind }
 func (ast *ArrayAst) Kind() AstKind    { return ArrayAstKind }
+
+func (ast *PropertyAst) Begin() Token { return ast.B }
+func (ast *ImportAst) Begin() Token   { return ast.B }
+func (ast *StructAst) Begin() Token   { return ast.B }
+func (ast *EnumAst) Begin() Token     { return ast.B }
+func (ast *UnionAst) Begin() Token    { return ast.B }
+func (ast *ServiceAst) Begin() Token  { return ast.B }
+func (ast *RpcAst) Begin() Token      { return ast.B }
+func (ast *OptionAst) Begin() Token   { return ast.B }
+func (ast *FieldAst) Begin() Token    { return ast.B }
+func (ast *TypeAst) Begin() Token     { return ast.B }
+func (ast *ArrayAst) Begin() Token    { return ast.B }
+
+func (ast *PropertyAst) End() Token { return ast.E }
+func (ast *ImportAst) End() Token   { return ast.E }
+func (ast *StructAst) End() Token   { return ast.E }
+func (ast *EnumAst) End() Token     { return ast.E }
+func (ast *UnionAst) End() Token    { return ast.E }
+func (ast *ServiceAst) End() Token  { return ast.E }
+func (ast *RpcAst) End() Token      { return ast.E }
+func (ast *OptionAst) End() Token   { return ast.E }
+func (ast *FieldAst) End() Token    { return ast.E }
+func (ast *TypeAst) End() Token     { return ast.E }
+func (ast *ArrayAst) End() Token    { return ast.E }

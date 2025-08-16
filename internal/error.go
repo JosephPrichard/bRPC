@@ -5,12 +5,17 @@ import "strings"
 type ParseError interface {
 	error
 	addKind(AstKind)
+	token() Token
 }
 
 type ExpectErr struct {
-	actual   Token
-	kind     AstKind
-	expected string
+	actual  Token
+	kind    AstKind
+	message string
+}
+
+func (err *ExpectErr) token() Token {
+	return err.actual
 }
 
 func (err *ExpectErr) addKind(kind AstKind) {
@@ -18,17 +23,21 @@ func (err *ExpectErr) addKind(kind AstKind) {
 }
 
 func (err *ExpectErr) Error() string {
-	return err.actual.FormatPosition() + "expected " + err.expected + " but got " + err.actual.String() + " while parsing " + err.kind.String()
+	return err.actual.FormatPosition() + err.message + " at " + err.actual.String() + " while parsing " + err.kind.String()
 }
 
 func makeParseErr(actual Token, expected string) ParseError {
-	return &ExpectErr{actual: actual, expected: expected}
+	return &ExpectErr{actual: actual, message: expected}
 }
 
 type TokenErr struct {
 	actual   Token
 	kind     AstKind
 	expected []TokType
+}
+
+func (err *TokenErr) token() Token {
+	return err.actual
 }
 
 func (err *TokenErr) addKind(kind AstKind) {
@@ -39,7 +48,7 @@ func (err *TokenErr) Error() string {
 	var sb strings.Builder
 
 	sb.WriteString(err.actual.FormatPosition())
-	sb.WriteString("expected ")
+	sb.WriteString("message ")
 	for i, tok := range err.expected {
 		sb.WriteString(tok.String())
 		if i == len(err.expected)-2 {
@@ -61,14 +70,13 @@ func makeTokenErr(actual Token, expected ...TokType) ParseError {
 	return &TokenErr{actual: actual, expected: expected}
 }
 
-type TypeErr struct {
-	actual Token
-	kind   AstKind
-	msg    string
+type AstErr struct {
+	ast Ast
+	msg string
 }
 
-func (err *TypeErr) Error() string {
-	return ""
+func (err *AstErr) Error() string {
+	return err.ast.Begin().FormatPosition() + err.msg + " while inside " + err.ast.Kind().String()
 }
 
 func printErrors(errs []error, filePath string, printLine func(string)) {
