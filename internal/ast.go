@@ -59,36 +59,29 @@ func (kind AstKind) String() string {
 
 type Ast interface {
 	Kind() AstKind
-	Begin() Token
-	End() Token
-	Clear()
+	Begin() int
+	End() int
+	Header() string
+	ClearPos()
 }
-
-type Markers struct {
-	B Token
-	E Token
-}
-
-func makeMarkers(tB TokType, vB string, tE TokType, vE string) Markers {
-	return Markers{
-		B: Token{TokVal: TokVal{t: tB, value: vB}},
-		E: Token{TokVal: TokVal{t: tE, value: vE}},
-	}
+type Range struct {
+	B int
+	E int
 }
 
 type PropertyAst struct {
-	Markers
+	Range
 	Name  string
 	Value string
 }
 
 type ImportAst struct {
-	Markers
+	Range
 	Path string
 }
 
 type StructAst struct {
-	Markers
+	Range
 	Table      *SymbolTable
 	Name       string // an empty string is an anonymous struct
 	Fields     []FieldAst
@@ -97,7 +90,7 @@ type StructAst struct {
 }
 
 type EnumAst struct {
-	Markers
+	Range
 	Table *SymbolTable
 	Name  string // an empty string is an anonymous enum
 	Cases []EnumCase
@@ -109,7 +102,7 @@ type EnumCase struct {
 }
 
 type UnionAst struct {
-	Markers
+	Range
 	Table      *SymbolTable
 	Name       string // an empty string is an anonymous union
 	Options    []OptionAst
@@ -118,7 +111,7 @@ type UnionAst struct {
 }
 
 type FieldAst struct {
-	Markers
+	Range
 	Modifier Modifier
 	Name     string
 	Type     Ast
@@ -126,13 +119,13 @@ type FieldAst struct {
 }
 
 type OptionAst struct {
-	Markers
+	Range
 	Type Ast
 	Ord  uint64
 }
 
 type ServiceAst struct {
-	Markers
+	Range
 	Table      *SymbolTable
 	Name       string
 	Procedures []RpcAst
@@ -140,23 +133,23 @@ type ServiceAst struct {
 }
 
 type RpcAst struct {
-	Markers
+	Range
 	Name string
 	Ord  uint64
 	Arg  Ast
 	Ret  Ast
 }
 
-type TypRefAst struct {
-	Markers
+type TypeRefAst struct {
+	Range
 	Table    *SymbolTable
 	Alias    string // an empty string is not an alias
 	Iden     string
 	TypeArgs []Ast
 }
 
-type TypArrAst struct {
-	Markers
+type TypeArrAst struct {
+	Range
 	Type Ast
 	Size []uint64 // 0 means the array is a dynamic array
 }
@@ -170,15 +163,64 @@ func (ast *ServiceAst) Kind() AstKind  { return ServiceAstKind }
 func (ast *RpcAst) Kind() AstKind      { return RpcAstKind }
 func (ast *OptionAst) Kind() AstKind   { return OptionAstKind }
 func (ast *FieldAst) Kind() AstKind    { return FieldAstKind }
-func (ast *TypRefAst) Kind() AstKind   { return TypeAstKind }
-func (ast *TypArrAst) Kind() AstKind   { return ArrayAstKind }
+func (ast *TypeRefAst) Kind() AstKind  { return TypeAstKind }
+func (ast *TypeArrAst) Kind() AstKind  { return ArrayAstKind }
 
-func (m *Markers) Begin() Token { return m.B }
-func (m *Markers) End() Token   { return m.E }
-func (m *Markers) Clear() {
-	// clears positional marker information, useful for testing - we don't really care to assert this information since it changes very frequently
-	m.B.beg = 0
-	m.B.end = 0
-	m.E.beg = 0
-	m.E.end = 0
+func (r *Range) Begin() int { return r.B }
+func (r *Range) End() int   { return r.E }
+
+func (r *Range) Header() string {
+	if r.B == r.E {
+		return fmt.Sprintf("%d: ", r.B)
+	} else {
+		return fmt.Sprintf("%d:%d: ", r.B, r.E)
+	}
+}
+
+func (r *Range) ClearPos() {
+	r.E = 0
+	r.B = 0
+}
+
+func Walk(visit func(Ast), ast Ast) {
+	if ast == nil {
+		return
+	}
+	visit(ast)
+	switch ast := ast.(type) {
+	case *PropertyAst, *ImportAst:
+		// nothing to do
+	case *StructAst:
+		WalkList(visit, ast.LocalDefs)
+		for i := range ast.Fields {
+			Walk(visit, &ast.Fields[i])
+		}
+	case *UnionAst:
+		WalkList(visit, ast.LocalDefs)
+		for i := range ast.Options {
+			Walk(visit, &ast.Options[i])
+		}
+	case *ServiceAst:
+		WalkList(visit, ast.LocalDefs)
+		for i := range ast.Procedures {
+			Walk(visit, &ast.Procedures[i])
+		}
+	case *OptionAst:
+		Walk(visit, ast.Type)
+	case *FieldAst:
+		Walk(visit, ast.Type)
+	case *RpcAst:
+		Walk(visit, ast.Arg)
+		Walk(visit, ast.Ret)
+	case *TypeRefAst:
+		WalkList(visit, ast.TypeArgs)
+	case *TypeArrAst:
+		Walk(visit, ast.Type)
+	}
+}
+
+func WalkList(visit func(Ast), asts []Ast) {
+	for _, ast := range asts {
+		Walk(visit, ast)
+	}
 }

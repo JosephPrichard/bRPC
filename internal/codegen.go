@@ -34,8 +34,8 @@ func makeTables(asts []Ast, prev *SymbolTable, errs *[]error) {
 		table.m[iden] = ast
 	}
 
-	for _, a := range asts {
-		switch ast := a.(type) {
+	for _, ast := range asts {
+		switch ast := ast.(type) {
 		case *StructAst:
 			ast.Table = table
 			insertAst(ast.Name, ast)
@@ -50,13 +50,13 @@ func makeTables(asts []Ast, prev *SymbolTable, errs *[]error) {
 			ast.Table = table
 			insertAst(ast.Name, ast)
 			makeTables(ast.LocalDefs, table, errs)
-		case *TypRefAst:
+		case *TypeRefAst:
 			ast.Table = table
 			insertAst(ast.Alias, ast)
-		case *TypArrAst:
-			if typ, ok := ast.Type.(*TypRefAst); ok {
-				typ.Table = table
-				insertAst(typ.Alias, ast)
+		case *TypeArrAst:
+			if ref, ok := ast.Type.(*TypeRefAst); ok {
+				ref.Table = table
+				insertAst(ref.Alias, ast)
 			} else {
 				panic(fmt.Sprintf("assertion error: array must have type as children, got: %T", ast.Type))
 			}
@@ -66,14 +66,14 @@ func makeTables(asts []Ast, prev *SymbolTable, errs *[]error) {
 
 // invariant: an abstract syntax tree is well-formed, but the data contained inside it may be invalid
 func validateAsts(asts []Ast, errs *[]error) {
-	for _, a := range asts {
-		switch ast := a.(type) {
+	for _, ast := range asts {
+		switch ast := ast.(type) {
 		case *StructAst:
 			validateAsts(ast.LocalDefs, errs)
 		case *UnionAst:
 			validateAsts(ast.LocalDefs, errs)
 		case *EnumAst:
-			//a := a.(*EnumAst)
+			//ast := ast.(*EnumAst)
 		case *ServiceAst:
 			validateAsts(ast.LocalDefs, errs)
 		}

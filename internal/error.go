@@ -23,7 +23,7 @@ func (err *ExpectErr) addKind(kind AstKind) {
 }
 
 func (err *ExpectErr) Error() string {
-	return err.actual.FormatPosition() + err.message + " at " + err.actual.String() + " while parsing " + err.kind.String()
+	return err.actual.Range.Header() + err.message + " at " + err.actual.String() + " while parsing " + err.kind.String()
 }
 
 func makeParseErr(actual Token, expected string) ParseError {
@@ -47,7 +47,7 @@ func (err *TokenErr) addKind(kind AstKind) {
 func (err *TokenErr) Error() string {
 	var sb strings.Builder
 
-	sb.WriteString(err.actual.FormatPosition())
+	sb.WriteString(err.actual.Range.Header())
 	sb.WriteString("message ")
 	for i, tok := range err.expected {
 		sb.WriteString(tok.String())
@@ -76,7 +76,7 @@ type AstErr struct {
 }
 
 func (err *AstErr) Error() string {
-	return err.ast.Begin().FormatPosition() + err.msg + " while inside " + err.ast.Kind().String()
+	return err.ast.Header() + err.msg + " while inside " + err.ast.Kind().String()
 }
 
 func printErrors(errs []error, filePath string, printLine func(string)) {

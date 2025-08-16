@@ -6,37 +6,20 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func clearAsts(asts []Ast) {
-	for _, ast := range asts {
-		ast.Clear()
-	}
-}
-
 func TestParser_Properties(t *testing.T) {
 	input := `
 	import "/path/to/idl/file.brpc"
 
 	package = "/hello/\\\"world\""
-	constant = "value"
+	constant = "Value"
 	`
 	asts, errs := runParser(input)
-	clearAsts(asts)
+	WalkList(Ast.ClearPos, asts)
 
 	expectedAsts := []Ast{
-		&ImportAst{
-			Path: "/path/to/idl/file.brpc",
-			Markers: makeMarkers(TokImport, "import", TokString, "\"/path/to/idl/file.brpc\""),
-		},
-		&PropertyAst{
-			Name:  "package",
-			Value: "/hello/\\\"world\"",
-			Markers: makeMarkers(TokIden, "package", TokString, "\"/hello/\\\\\\\"world\\\"\""),
-		},
-		&PropertyAst{
-			Name:  "constant",
-			Value: "value",
-			Markers: makeMarkers(TokIden, "constant", TokString, "\"value\""),
-		},
+		&ImportAst{Path: "/path/to/idl/file.brpc"},
+		&PropertyAst{Name: "package", Value: "/hello/\\\"world\""},
+		&PropertyAst{Name: "constant", Value: "Value"},
 	}
 
 	assert.Equal(t, expectedAsts, asts)
@@ -50,57 +33,26 @@ func TestParser_Alias(t *testing.T) {
 	message Object [4]Object1(BinaryArray []Object3(b8) [6]b8 []b16)
 	`
 	asts, errs := runParser(input)
-	clearAsts(asts)
+	WalkList(Ast.ClearPos, asts)
 
 	expectedAsts := []Ast{
-		&TypRefAst{
-			Alias: "Data",
-			Iden:  "Data1",
-			Markers: makeMarkers(TokImport, "import", TokString, "\"/path/to/idl/file.brpc\""),
-		},
-		&TypArrAst{
-			Type: &TypRefAst{
-				Alias: "BinaryArray",
-				Iden:  "b64",
-				Markers: makeMarkers(TokImport, "import", TokString, "\"/path/to/idl/file.brpc\""),
-			},
-			Size: []uint64{6},
-			Markers: makeMarkers(TokImport, "import", TokString, "\"/path/to/idl/file.brpc\""),
-		},
-		&TypArrAst{
-			Type: &TypRefAst{
+		&TypeRefAst{Alias: "Data", Iden: "Data1"},
+		&TypeArrAst{Type: &TypeRefAst{Alias: "BinaryArray", Iden: "b64"}, Size: []uint64{6}},
+		&TypeArrAst{
+			Type: &TypeRefAst{
 				Alias: "Object",
 				Iden:  "Object1",
 				TypeArgs: []Ast{
-					&TypRefAst{
-						Iden: "BinaryArray",
-						Markers: makeMarkers(TokImport, "import", TokString, "\"/path/to/idl/file.brpc\""),
-					},
-					&TypArrAst{
-						Type: &TypRefAst{
-							Iden: "Object3",
-							TypeArgs: []Ast{
-								&TypRefAst{Iden: "b8"},
-							},
-							Markers: makeMarkers(TokImport, "import", TokString, "\"/path/to/idl/file.brpc\""),
-						},
+					&TypeRefAst{Iden: "BinaryArray"},
+					&TypeArrAst{
+						Type: &TypeRefAst{Iden: "Object3", TypeArgs: []Ast{&TypeRefAst{Iden: "b8"}}},
 						Size: []uint64{0},
-						Markers: makeMarkers(TokImport, "import", TokString, "\"/path/to/idl/file.brpc\""),
 					},
-					&TypArrAst{
-						Type: &TypRefAst{Iden: "b8"},
-						Size: []uint64{6},
-						Markers: makeMarkers(TokImport, "import", TokString, "\"/path/to/idl/file.brpc\""),
-					},
-					&TypArrAst{
-						Type: &TypRefAst{Iden: "b16"},
-						Size: []uint64{0},
-						Markers: makeMarkers(TokImport, "import", TokString, "\"/path/to/idl/file.brpc\""),
-					},
+					&TypeArrAst{Type: &TypeRefAst{Iden: "b8"}, Size: []uint64{6}},
+					&TypeArrAst{Type: &TypeRefAst{Iden: "b16"}, Size: []uint64{0}},
 				},
 			},
 			Size: []uint64{4},
-			Markers: makeMarkers(TokImport, "import", TokString, "\"/path/to/idl/file.brpc\""),
 		},
 	}
 
@@ -130,37 +82,37 @@ func TestParser_Struct(t *testing.T) {
 	}
 	`
 	asts, errs := runParser(input)
-	clearAsts(asts)
+	WalkList(Ast.ClearPos, asts)
 
 	expectedAsts := []Ast{
 		&StructAst{
 			Name: "Data1",
 			Fields: []FieldAst{
-				{Modifier: Required, Name: "one", Ord: 1, Type: &TypRefAst{Iden: "b128"}},
+				{Modifier: Required, Name: "one", Ord: 1, Type: &TypeRefAst{Iden: "b128"}},
 				{
 					Modifier: Required,
 					Name:     "two",
 					Ord:      2,
-					Type:     &TypArrAst{Type: &TypRefAst{Iden: "b5"}, Size: []uint64{0}},
+					Type:     &TypeArrAst{Type: &TypeRefAst{Iden: "b5"}, Size: []uint64{0}},
 				},
 				{
 					Modifier: Optional,
 					Name:     "three",
 					Ord:      3,
-					Type:     &TypArrAst{Type: &TypRefAst{Iden: "b4"}, Size: []uint64{16}},
+					Type:     &TypeArrAst{Type: &TypeRefAst{Iden: "b4"}, Size: []uint64{16}},
 				},
 				{
 					Modifier: Optional,
 					Name:     "four",
 					Ord:      4,
-					Type:     &TypArrAst{Type: &TypRefAst{Iden: "b4"}, Size: []uint64{0, 4, 0}},
+					Type:     &TypeArrAst{Type: &TypeRefAst{Iden: "b4"}, Size: []uint64{0, 4, 0}},
 				},
 				{
 					Modifier: Required,
 					Name:     "five",
 					Ord:      5,
 					Type: &StructAst{
-						Fields: []FieldAst{{Modifier: Required, Name: "one", Ord: 1, Type: &TypRefAst{Iden: "b16"}}},
+						Fields: []FieldAst{{Modifier: Required, Name: "one", Ord: 1, Type: &TypeRefAst{Iden: "b16"}}},
 					},
 				},
 			},
@@ -168,15 +120,15 @@ func TestParser_Struct(t *testing.T) {
 				&StructAst{
 					Name: "Data2",
 					Fields: []FieldAst{
-						{Modifier: Required, Name: "one", Ord: 1, Type: &TypRefAst{Iden: "Data3"}},
+						{Modifier: Required, Name: "one", Ord: 1, Type: &TypeRefAst{Iden: "Data3"}},
 					},
 					LocalDefs: []Ast{
 						&StructAst{
 							Name:       "Data3",
 							TypeParams: []string{"A", "B"},
 							Fields: []FieldAst{
-								{Modifier: Required, Name: "one", Ord: 1, Type: &TypRefAst{Iden: "A"}},
-								{Modifier: Required, Name: "two", Ord: 2, Type: &TypRefAst{Iden: "B"}},
+								{Modifier: Required, Name: "one", Ord: 1, Type: &TypeRefAst{Iden: "A"}},
+								{Modifier: Required, Name: "two", Ord: 2, Type: &TypeRefAst{Iden: "B"}},
 							},
 						},
 					},
@@ -198,7 +150,7 @@ func TestParser_Enum(t *testing.T) {
 	}
 	`
 	asts, errs := runParser(input)
-	clearAsts(asts)
+	WalkList(Ast.ClearPos, asts)
 
 	expectedAsts := []Ast{
 		&EnumAst{
@@ -229,7 +181,7 @@ func TestParser_Union(t *testing.T) {
 	}
 	`
 	asts, errs := runParser(input)
-	clearAsts(asts)
+	WalkList(Ast.ClearPos, asts)
 
 	expectedAsts := []Ast{
 		&UnionAst{
@@ -241,18 +193,18 @@ func TestParser_Union(t *testing.T) {
 					Ord: 2,
 					Type: &StructAst{
 						Fields: []FieldAst{
-							{Modifier: Required, Name: "one", Ord: 1, Type: &TypRefAst{Iden: "A"}},
+							{Modifier: Required, Name: "one", Ord: 1, Type: &TypeRefAst{Iden: "A"}},
 						},
 					},
 				},
-				{Ord: 3, Type: &TypRefAst{Iden: "Data"}},
+				{Ord: 3, Type: &TypeRefAst{Iden: "Data"}},
 			},
 			LocalDefs: []Ast{
 				&UnionAst{
 					Name: "Data",
 					Options: []OptionAst{
-						{Ord: 1, Type: &TypRefAst{Iden: "B"}},
-						{Ord: 2, Type: &TypRefAst{Iden: "C"}},
+						{Ord: 1, Type: &TypeRefAst{Iden: "B"}},
+						{Ord: 2, Type: &TypeRefAst{Iden: "C"}},
 					},
 				},
 			},
@@ -275,13 +227,13 @@ func TestParser_Service(t *testing.T) {
 	}
 	`
 	asts, errs := runParser(input)
-	clearAsts(asts)
+	WalkList(Ast.ClearPos, asts)
 
 	expectedAsts := []Ast{
 		&ServiceAst{
 			Name: "ServiceA",
 			Procedures: []RpcAst{
-				{Ord: 1, Name: "Hello", Arg: &TypRefAst{Iden: "Test"}, Ret: &TypRefAst{Iden: "Output"}},
+				{Ord: 1, Name: "Hello", Arg: &TypeRefAst{Iden: "Test"}, Ret: &TypeRefAst{Iden: "Output"}},
 				{
 					Ord:  2,
 					Name: "World",
@@ -299,7 +251,7 @@ func TestParser_Service(t *testing.T) {
 				&StructAst{
 					Name: "Test",
 					Fields: []FieldAst{
-						{Modifier: Required, Name: "one", Ord: 1, Type: &TypRefAst{Iden: "b24"}},
+						{Modifier: Required, Name: "one", Ord: 1, Type: &TypeRefAst{Iden: "b24"}},
 					},
 				},
 			},

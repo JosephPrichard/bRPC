@@ -97,43 +97,34 @@ func (t TokType) String() string {
 	case TokComment:
 		return "'//'"
 	default:
-		panic(fmt.Sprintf("assertion error: unknown begin: %d", t))
+		panic(fmt.Sprintf("assertion error: unknown.Bin: %d", t))
 	}
 }
 
 type TokVal struct {
-	t        TokType
-	value    string
-	expected TokType
+	T        TokType
+	Value    string
+	Expected TokType
 }
 
 func (t TokVal) String() string {
-	switch t.t {
+	switch t.T {
 	case TokUnknown:
 		return "<unknown>"
 	case TokEof:
 		return "<eof>"
 	default:
-		return t.value
+		return t.Value
 	}
 }
 
 type Token struct {
 	TokVal
-	beg int
-	end int
+	Range
 }
 
 func (t Token) String() string {
 	return fmt.Sprintf("'%s'", t.TokVal.String())
-}
-
-func (t Token) FormatPosition() string {
-	if t.beg == t.end {
-		return fmt.Sprintf("%d: ", t.beg)
-	} else {
-		return fmt.Sprintf("%d:%d: ", t.beg, t.end)
-	}
 }
 
 type Lexer struct {
@@ -153,7 +144,7 @@ func makeLexer(input string) Lexer {
 
 func (lex *Lexer) emit(tok TokType) {
 	val := lex.input[lex.start:lex.curr]
-	lex.tokens = append(lex.tokens, Token{TokVal: TokVal{t: tok, value: val}, beg: lex.start, end: lex.curr})
+	lex.tokens = append(lex.tokens, Token{TokVal{T: tok, Value: val}, Range{B: lex.start, E: lex.curr}})
 	lex.skip()
 }
 
@@ -184,7 +175,7 @@ func (lex *Lexer) emitText() {
 		tok = TokImport
 	}
 
-	lex.tokens = append(lex.tokens, Token{TokVal: TokVal{t: tok, value: str}, beg: lex.start, end: lex.curr})
+	lex.tokens = append(lex.tokens, Token{TokVal{T: tok, Value: str}, Range{B: lex.start, E: lex.curr}})
 	lex.skip()
 }
 
@@ -203,9 +194,8 @@ func (lex *Lexer) emitErr(expected TokType) {
 
 	val := lex.input[lex.start:lex.curr]
 	token := Token{
-		TokVal: TokVal{t: TokErr, value: val, expected: expected},
-		beg:    lex.start,
-		end:    lex.curr,
+		TokVal{T: TokErr, Value: val, Expected: expected},
+		Range{B: lex.start, E: lex.curr},
 	}
 	lex.tokens = append(lex.tokens, token)
 	lex.skip()
