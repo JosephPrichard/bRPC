@@ -8,13 +8,18 @@ import (
 )
 
 const (
-	TokUnknown TokType = iota
+	// TokUnknown etc. are used to control the flow of the parser itself, with error reporting, termination, etc.
+	TokUnknown TokKind = iota
 	TokErr
 	TokEof
+
+	// TokIden etc. represent "variable" data that may need to be parsed later
 	TokIden
 	TokInteger
 	TokString
 	TokOrd
+
+	// TokSemicolon etc. are special character tokens used to control termination of ASTs
 	TokSemicolon
 	TokComma
 	TokLBrace
@@ -24,9 +29,8 @@ const (
 	TokLBrack
 	TokRBrack
 	TokEqual
-	TokPipe
-	TokMessage
-	TokService
+
+	// TokRequired etc., are "literal" tokens which represent extract symbols for controlling AST creation
 	TokRequired
 	TokOptional
 	TokStruct
@@ -35,25 +39,35 @@ const (
 	TokReturns
 	TokRpc
 	TokImport
+	TokMessage
+	TokService
+
+	// TokComment can be an "expected" token, but is never emitted for the parser to consume
 	TokComment
+
+	// TokField etc. these are "fake" tokens which represents multiple "literal" tokens, which the parser may expect, but will never attempt to consume
+	TokField
+	TokType
+	TokCase
+	TokOption
 )
 
-type TokType int
+type TokKind int
 
-func (t TokType) String() string {
-	switch t {
+func (k TokKind) String() string {
+	switch k {
 	case TokErr:
-		return "<error>"
+		return "error"
 	case TokEof:
-		return "<eof>"
+		return "eof"
 	case TokIden:
-		return "<iden>"
+		return "iden"
 	case TokInteger:
-		return "<integer>"
+		return "integer"
 	case TokString:
-		return "<string>"
+		return "string"
 	case TokOrd:
-		return "<ord>"
+		return "ord"
 	case TokSemicolon:
 		return "';'"
 	case TokComma:
@@ -72,43 +86,49 @@ func (t TokType) String() string {
 		return "']'"
 	case TokEqual:
 		return "'='"
-	case TokPipe:
-		return "'|'"
 	case TokMessage:
-		return "'message'"
+		return "message"
 	case TokService:
-		return "'service'"
+		return "service"
 	case TokRequired:
-		return "'required'"
+		return "required"
 	case TokOptional:
-		return "'optional'"
+		return "optional"
 	case TokStruct:
-		return "'struct'"
+		return "struct"
 	case TokUnion:
-		return "'union'"
+		return "union"
 	case TokEnum:
-		return "'enum'"
+		return "enum"
 	case TokReturns:
-		return "'returns'"
+		return "returns"
 	case TokRpc:
-		return "'rpc'"
+		return "rpc"
 	case TokImport:
-		return "'import'"
+		return "import"
 	case TokComment:
 		return "'//'"
+	case TokType:
+		return "type"
+	case TokField:
+		return "field"
+	case TokCase:
+		return "case"
+	case TokOption:
+		return "option"
 	default:
-		panic(fmt.Sprintf("assertion error: unknown.Bin: %d", t))
+		panic(fmt.Sprintf("assertion error: unknown token: %d", k))
 	}
 }
 
 type TokVal struct {
-	T        TokType
+	Kind     TokKind
 	Value    string
-	Expected TokType
+	Expected TokKind // the expected value for this token, only populated if Kind is TokErr
 }
 
 func (t TokVal) String() string {
-	switch t.T {
+	switch t.Kind {
 	case TokUnknown:
 		return "<unknown>"
 	case TokEof:
@@ -142,9 +162,9 @@ func makeLexer(input string) Lexer {
 	return Lexer{input: input, tokens: make([]Token, 0)}
 }
 
-func (lex *Lexer) emit(tok TokType) {
+func (lex *Lexer) emit(tok TokKind) {
 	val := lex.input[lex.start:lex.curr]
-	lex.tokens = append(lex.tokens, Token{TokVal{T: tok, Value: val}, Range{B: lex.start, E: lex.curr}})
+	lex.tokens = append(lex.tokens, Token{TokVal{Kind: tok, Value: val}, Range{B: lex.start, E: lex.curr}})
 	lex.skip()
 }
 
@@ -175,16 +195,16 @@ func (lex *Lexer) emitText() {
 		tok = TokImport
 	}
 
-	lex.tokens = append(lex.tokens, Token{TokVal{T: tok, Value: str}, Range{B: lex.start, E: lex.curr}})
+	lex.tokens = append(lex.tokens, Token{TokVal{Kind: tok, Value: str}, Range{B: lex.start, E: lex.curr}})
 	lex.skip()
 }
 
-func (lex *Lexer) emitNext(tok TokType) {
+func (lex *Lexer) emitNext(tok TokKind) {
 	lex.consume()
 	lex.emit(tok)
 }
 
-func (lex *Lexer) emitErr(expected TokType) {
+func (lex *Lexer) emitErr(expected TokKind) {
 	// scan until a sentinel symbol
 	if expected == TokComment {
 		lex.acceptUntil(newline)
@@ -194,7 +214,7 @@ func (lex *Lexer) emitErr(expected TokType) {
 
 	val := lex.input[lex.start:lex.curr]
 	token := Token{
-		TokVal{T: TokErr, Value: val, Expected: expected},
+		TokVal{Kind: TokErr, Value: val, Expected: expected},
 		Range{B: lex.start, E: lex.curr},
 	}
 	lex.tokens = append(lex.tokens, token)
@@ -359,8 +379,6 @@ func (lex *Lexer) lex() bool {
 		lex.emitNext(TokSemicolon)
 	case ',':
 		lex.emitNext(TokComma)
-	case '|':
-		lex.emitNext(TokPipe)
 	case '/':
 		lex.lexComment()
 	case '@':

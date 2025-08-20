@@ -12,12 +12,13 @@ const (
 type AstKind int
 
 const (
-	RootAstKind AstKind = iota
+	UnknownAstKind AstKind = iota
 	PropertyAstKind
 	ImportAstKind
 	StructAstKind
 	EnumAstKind
 	UnionAstKind
+	CaseAstKind
 	FieldAstKind
 	OptionAstKind
 	ServiceAstKind
@@ -28,30 +29,32 @@ const (
 
 func (kind AstKind) String() string {
 	switch kind {
-	case RootAstKind:
-		return "<root>"
+	case UnknownAstKind:
+		return "unknown"
 	case PropertyAstKind:
-		return "<property>"
+		return "property"
 	case ImportAstKind:
-		return "<import>"
+		return "import"
 	case StructAstKind:
-		return "<struct>"
+		return "struct"
 	case EnumAstKind:
-		return "<enum>"
+		return "enum"
 	case UnionAstKind:
-		return "<union>"
+		return "union"
 	case FieldAstKind:
-		return "<field>"
+		return "field"
+	case CaseAstKind:
+		return "case"
 	case OptionAstKind:
-		return "<option>"
+		return "option"
 	case ServiceAstKind:
-		return "<service>"
+		return "service"
 	case RpcAstKind:
-		return "<rpc>"
+		return "rpc"
 	case TypeAstKind:
-		return "<type>"
+		return "type"
 	case ArrayAstKind:
-		return "<arrPrefix>"
+		return "array"
 	default:
 		panic(fmt.Sprintf("assertion error: unknown AstKind: %d", kind))
 	}
@@ -69,18 +72,26 @@ type Range struct {
 	E int
 }
 
+// Tags stores some common information we want to keep track for each Ast
+type Tags struct {
+	Poisoned bool
+}
+
 type PropertyAst struct {
+	Tags
 	Range
 	Name  string
 	Value string
 }
 
 type ImportAst struct {
+	Tags
 	Range
 	Path string
 }
 
 type StructAst struct {
+	Tags
 	Range
 	Table      *SymbolTable
 	Name       string // an empty string is an anonymous struct
@@ -90,18 +101,21 @@ type StructAst struct {
 }
 
 type EnumAst struct {
+	Tags
 	Range
 	Table *SymbolTable
 	Name  string // an empty string is an anonymous enum
-	Cases []EnumCase
+	Cases []CaseAst
 }
 
-type EnumCase struct {
+type CaseAst struct {
+	Tags // an enum case still contains ast meta tags even though it is not a recursive AST
 	Name string
 	Ord  uint64
 }
 
 type UnionAst struct {
+	Tags
 	Range
 	Table      *SymbolTable
 	Name       string // an empty string is an anonymous union
@@ -111,6 +125,7 @@ type UnionAst struct {
 }
 
 type FieldAst struct {
+	Tags
 	Range
 	Modifier Modifier
 	Name     string
@@ -119,12 +134,14 @@ type FieldAst struct {
 }
 
 type OptionAst struct {
+	Tags
 	Range
 	Type Ast
 	Ord  uint64
 }
 
 type ServiceAst struct {
+	Tags
 	Range
 	Table      *SymbolTable
 	Name       string
@@ -133,6 +150,7 @@ type ServiceAst struct {
 }
 
 type RpcAst struct {
+	Tags
 	Range
 	Name string
 	Ord  uint64
@@ -141,6 +159,7 @@ type RpcAst struct {
 }
 
 type TypeRefAst struct {
+	Tags
 	Range
 	Table    *SymbolTable
 	Alias    string // an empty string is not an alias
@@ -149,6 +168,7 @@ type TypeRefAst struct {
 }
 
 type TypeArrAst struct {
+	Tags
 	Range
 	Type Ast
 	Size []uint64 // 0 means the array is a dynamic array

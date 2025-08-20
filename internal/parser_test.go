@@ -1,14 +1,15 @@
 package internal
 
 import (
-	"testing"
-
+	"fmt"
 	"github.com/stretchr/testify/assert"
+	"testing"
+	"time"
 )
 
 func TestParser_Properties(t *testing.T) {
 	input := `
-	import "/path/to/idl/file.brpc"
+	import "/services/schemas/animals"
 
 	package = "/hello/\\\"world\""
 	constant = "Value"
@@ -17,7 +18,7 @@ func TestParser_Properties(t *testing.T) {
 	WalkList(Ast.ClearPos, asts)
 
 	expectedAsts := []Ast{
-		&ImportAst{Path: "/path/to/idl/file.brpc"},
+		&ImportAst{Path: "/services/schemas/animals"},
 		&PropertyAst{Name: "package", Value: "/hello/\\\"world\""},
 		&PropertyAst{Name: "constant", Value: "Value"},
 	}
@@ -155,7 +156,7 @@ func TestParser_Enum(t *testing.T) {
 	expectedAsts := []Ast{
 		&EnumAst{
 			Name: "Data1",
-			Cases: []EnumCase{
+			Cases: []CaseAst{
 				{Ord: 1, Name: "One"},
 				{Ord: 2, Name: "Two"},
 				{Ord: 3, Name: "Three"},
@@ -239,7 +240,7 @@ func TestParser_Service(t *testing.T) {
 					Name: "World",
 					Arg:  &StructAst{},
 					Ret: &EnumAst{
-						Cases: []EnumCase{
+						Cases: []CaseAst{
 							{Ord: 1, Name: "One"},
 							{Ord: 2, Name: "Two"},
 							{Ord: 3, Name: "Three"},
@@ -264,6 +265,7 @@ func TestParser_Service(t *testing.T) {
 
 func TestParser_Errors(t *testing.T) {
 	type Test struct {
+		name  string
 		input string
 		asts  []Ast
 		errs  []error
@@ -271,18 +273,82 @@ func TestParser_Errors(t *testing.T) {
 
 	tests := []Test{
 		{
+			name: "UnclosedStruct",
 			input: `
 			message Data1 struct {
 				required one @1 b128;
 			`,
+			asts: []Ast{
+				&StructAst{
+					Tags: Tags{Poisoned: true},
+					Name: "Data1",
+					Fields: []FieldAst{
+						{Modifier: Required, Name: "one", Ord: 1, Type: &TypeRefAst{Iden: "b128"}},
+					},
+				},
+			},
+			errs: []error{
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokEof, Value: ""}, Range{B: 56, E: 56}},
+					kind:     StructAstKind,
+					expected: []TokKind{TokField, TokMessage, TokRBrace},
+				},
+			},
 		},
 		{
+			name: "UnclosedNestedStruct",
 			input: `
 			message Data1 struct {
-				message Data2 struct {
+				message Data2 union {
+					message Data3 struct {
 			`,
+			asts: []Ast{
+				&StructAst{
+					Tags: Tags{Poisoned: true},
+					Name: "Data1",
+					LocalDefs: []Ast{
+						&UnionAst{
+							Tags: Tags{Poisoned: true},
+							Name: "Data2",
+							LocalDefs: []Ast{
+								&StructAst{Tags: Tags{Poisoned: true}, Name: "Data3"},
+							},
+						},
+					},
+				},
+			},
+			errs: []error{
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokEof, Value: ""}, Range{B: 84, E: 84}},
+					kind:     StructAstKind,
+					expected: []TokKind{TokField, TokMessage, TokRBrace},
+				},
+			},
 		},
 		{
+			name: "InvalidArraySize",
+			input: `
+			message Data struct {
+				required one @1 [5a]b128;
+			}`,
+			asts: []Ast{
+				&StructAst{
+					Name: "Data",
+					Fields: []FieldAst{
+						{Tags: Tags{Poisoned: true}, Modifier: Required, Name: "one", Ord: 1},
+					},
+				},
+			},
+			errs: []error{
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokErr, Value: "5a", Expected: TokInteger}, Range{B: 47, E: 49}},
+					kind:     ArrayAstKind,
+					expected: []TokKind{TokInteger, TokRBrack},
+				},
+			},
+		},
+		{
+			name: "InvalidFields",
 			input: `
 			message Data1 struct {
 				required one @1abc b128;
@@ -291,52 +357,228 @@ func TestParser_Errors(t *testing.T) {
 				message Data2 struct {
 					required one @1;
 				}
-			}
-		
-			message Data3 struct {
-				required one @1;
-
-				message Data4 union {
-					@1 One;
-					Two;
-				}
-			}
-
-			message Data4 enum {
-				@1 ONE;
-				TWO;
-			}
-			`,
+			}`,
+			asts: []Ast{
+				&StructAst{
+					Tags: Tags{Poisoned: true},
+					Name: "Data1",
+					Fields: []FieldAst{
+						{Tags: Tags{Poisoned: true}, Modifier: Required, Name: "one"},
+					},
+					LocalDefs: []Ast{
+						&StructAst{
+							Name: "Data2",
+							Fields: []FieldAst{
+								{Tags: Tags{Poisoned: true}, Modifier: Required, Name: "one", Ord: 1},
+							},
+						},
+					},
+				},
+			},
+			errs: []error{
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokErr, Value: "@1abc", Expected: TokOrd}, Range{B: 44, E: 49}},
+					kind:     FieldAstKind,
+					expected: []TokKind{TokOrd},
+				},
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokIden, Value: "two"}, Range{B: 60, E: 63}},
+					kind:     StructAstKind,
+					expected: []TokKind{TokField, TokMessage, TokRBrace},
+				},
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokSemicolon, Value: ";"}, Range{B: 126, E: 127}},
+					kind:     FieldAstKind,
+					expected: []TokKind{TokType},
+				},
+			},
 		},
 		{
+			name: "InvalidUnion",
+			input: `
+			message Data3 struct {
+				required one @1;
+		
+				message Data4 union {
+					@1 One;
+					@2 5;
+					Two;
+				}
+			}`,
+			asts: []Ast{
+				&StructAst{
+					Name: "Data3",
+					Fields: []FieldAst{
+						{Tags: Tags{Poisoned: true}, Modifier: Required, Name: "one", Ord: 1},
+					},
+					LocalDefs: []Ast{
+						&UnionAst{
+							Tags: Tags{Poisoned: true},
+							Name: "Data4",
+							Options: []OptionAst{
+								{Type: &TypeRefAst{Iden: "One"}, Ord: 1},
+								{Tags: Tags{Poisoned: true}, Ord: 2},
+							},
+						},
+					},
+				},
+			},
+			errs: []error{
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokSemicolon, Value: ";"}, Range{B: 46, E: 47}},
+					kind:     FieldAstKind,
+					expected: []TokKind{TokType},
+				},
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokInteger, Value: "5"}, Range{B: 98, E: 99}},
+					kind:     OptionAstKind,
+					expected: []TokKind{TokType},
+				},
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokIden, Value: "Two"}, Range{B: 106, E: 109}},
+					kind:     UnionAstKind,
+					expected: []TokKind{TokOption, TokMessage, TokRBrace},
+				},
+			},
+		},
+		{
+			name: "InvalidEnum",
+			input: `
+			message Data4 enum {
+				@1 ONE;
+				@2 2 TWO;
+				THREE;
+			}`,
+			asts: []Ast{
+				&EnumAst{
+					Tags: Tags{Poisoned: true},
+					Name: "Data4",
+					Cases: []CaseAst{
+						{Name: "ONE", Ord: 1},
+						{Tags: Tags{Poisoned: true}, Ord: 2},
+					},
+				},
+			},
+			errs: []error{
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokInteger, Value: "2"}, Range{B: 44, E: 45}},
+					kind:     CaseAstKind,
+					expected: []TokKind{TokIden},
+				},
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokIden, Value: "THREE"}, Range{B: 55, E: 60}},
+					kind:     EnumAstKind,
+					expected: []TokKind{TokCase, TokRBrace},
+				},
+			},
+		},
+		{
+			name: "DuplicatedIdentifiers",
 			input: `
 			message Data struct {
 				required one one one one one @1 b128;
 				two two two two two @2 []b5;
 				required three @3 b128
-			}
-			`,
+			}`,
+			asts: []Ast{
+				&StructAst{
+					Tags: Tags{Poisoned: true},
+					Name: "Data",
+					Fields: []FieldAst{
+						{Tags: Tags{Poisoned: true}, Modifier: Required, Name: "one"},
+						{Tags: Tags{Poisoned: true}, Modifier: Required, Name: "three", Ord: 3, Type: &TypeRefAst{Iden: "b128"}},
+					},
+				},
+			},
+			errs: []error{
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokIden, Value: "one"}, Range{B: 43, E: 46}},
+					kind:     FieldAstKind,
+					expected: []TokKind{TokOrd},
+				},
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokIden, Value: "two"}, Range{B: 72, E: 75}},
+					kind:     StructAstKind,
+					expected: []TokKind{TokField, TokMessage, TokRBrace},
+				},
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokRBrace, Value: "}"}, Range{B: 131, E: 132}},
+					kind:     FieldAstKind,
+					expected: []TokKind{TokSemicolon},
+				},
+			},
 		},
 		{
+			name: "InvalidRpc",
 			input: `
 			service Data {
-				rpc @1 Hello(Test) returns (Output)
+				rpc @1 Hello(Test) (Output)
 				required one @1 b128;
-				rpc @2 World(Test1) returns (Output1)
-			}
-			`,
+				rpc @2 World(Test1) returns ()
+			}`,
+			asts: []Ast{
+				&ServiceAst{
+					Tags: Tags{Poisoned: true},
+					Name: "Data",
+					Procedures: []RpcAst{
+						{Tags: Tags{Poisoned: true}, Name: "Hello", Ord: 1, Arg: &TypeRefAst{Iden: "Test"}},
+						{Tags: Tags{Poisoned: true}, Name: "World", Ord: 2, Arg: &TypeRefAst{Iden: "Test1"}},
+					},
+				},
+			},
+			errs: []error{
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokLParen, Value: "("}, Range{B: 42, E: 43}},
+					kind:     RpcAstKind,
+					expected: []TokKind{TokReturns},
+				},
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokRequired, Value: "required"}, Range{B: 55, E: 63}},
+					kind:     ServiceAstKind,
+					expected: []TokKind{TokRpc, TokMessage, TokRBrace},
+				},
+				&ParsingErr{
+					actual:   Token{TokVal{Kind: TokRParen, Value: ")"}, Range{B: 110, E: 111}},
+					kind:     RpcAstKind,
+					expected: []TokKind{TokType},
+				},
+			},
 		},
 	}
 
 	for _, test := range tests {
-		asts, errs := runParser(test.input)
+		t.Run(fmt.Sprintf("test/%s", test.name), func(t *testing.T) {
+			asts, errs := runParser(test.input)
+			WalkList(Ast.ClearPos, asts)
 
-		printLine := func(err string) {
-			t.Log(err)
-		}
-		printErrors(errs, "test.brpc", printLine)
+			printLine := func(err string) {
+				t.Log(err)
+			}
+			printErrors(errs, "test", printLine)
 
-		assert.Equal(t, test.asts, asts)
-		assert.Equal(t, test.errs, errs)
+			assert.Equal(t, test.asts, asts)
+			assert.Equal(t, test.errs, errs)
+		})
+	}
+}
+
+func TestParser_Garbage(t *testing.T) {
+	input := `
+	hello world service struct field}
+	lorem; ipsum 5a{ test 123 go there
+	`
+
+	done := make(chan struct{})
+
+	go func() {
+		runParser(input)
+		close(done)
+	}()
+
+	select {
+	case <-time.After(time.Second):
+		t.Fatal("garbage parser test has timed out, is there an infinite loop?")
+	case <-done:
+		t.Log("finished garbage parser test")
 	}
 }

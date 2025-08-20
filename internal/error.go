@@ -1,73 +1,58 @@
 package internal
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
-type ParseError interface {
+type ParserError interface {
 	error
 	addKind(AstKind)
 	token() Token
 }
 
-type ExpectErr struct {
-	actual  Token
-	kind    AstKind
-	message string
-}
-
-func (err *ExpectErr) token() Token {
-	return err.actual
-}
-
-func (err *ExpectErr) addKind(kind AstKind) {
-	err.kind = kind
-}
-
-func (err *ExpectErr) Error() string {
-	return err.actual.Range.Header() + err.message + " at " + err.actual.String() + " while parsing " + err.kind.String()
-}
-
-func makeParseErr(actual Token, expected string) ParseError {
-	return &ExpectErr{actual: actual, message: expected}
-}
-
-type TokenErr struct {
+type ParsingErr struct {
 	actual   Token
 	kind     AstKind
-	expected []TokType
+	expected []TokKind
+	message  string
 }
 
-func (err *TokenErr) token() Token {
+func (err *ParsingErr) token() Token {
 	return err.actual
 }
 
-func (err *TokenErr) addKind(kind AstKind) {
-	err.kind = kind
+func (err *ParsingErr) addKind(kind AstKind) {
+	if err.kind == UnknownAstKind {
+		err.kind = kind
+	}
 }
 
-func (err *TokenErr) Error() string {
+func (err *ParsingErr) Error() string {
 	var sb strings.Builder
-
-	sb.WriteString(err.actual.Range.Header())
-	sb.WriteString("message ")
-	for i, tok := range err.expected {
-		sb.WriteString(tok.String())
-		if i == len(err.expected)-2 {
-			sb.WriteString(" or ")
-		} else if i != len(err.expected)-1 {
-			sb.WriteString(", ")
+	sb.WriteString(err.message)
+	if len(err.expected) > 0 {
+		sb.WriteString("expected ")
+		for i, tok := range err.expected {
+			var delim string
+			if i == len(err.expected)-2 {
+				delim = " or "
+			} else if i != len(err.expected)-1 {
+				delim = ", "
+			}
+			sb.WriteString(tok.String())
+			sb.WriteString(delim)
 		}
 	}
-
-	sb.WriteString(" but got ")
-	sb.WriteString(err.actual.String())
-	sb.WriteString(" while parsing ")
-	sb.WriteString(err.kind.String())
-
-	return sb.String()
+	return fmt.Sprintf("%s %s, found %s while parsing %s", err.actual.Range.Header(), sb.String(), err.actual.String(), err.kind.String())
 }
 
-func makeTokenErr(actual Token, expected ...TokType) ParseError {
-	return &TokenErr{actual: actual, expected: expected}
+func makeMessageErr(actual Token, message string) ParserError {
+	return &ParsingErr{actual: actual, message: message}
+}
+
+func makeExpectErr(actual Token, expected ...TokKind) ParserError {
+	return &ParsingErr{actual: actual, expected: expected}
 }
 
 type AstErr struct {
