@@ -7,30 +7,35 @@ import (
 
 type ParserError interface {
 	error
-	addKind(AstKind)
+	addKind(NodeKind)
 	token() Token
 }
 
 type ParsingErr struct {
 	actual   Token
-	kind     AstKind
+	kind     NodeKind
 	expected []TokKind
-	message  string
+	text     string
 }
 
 func (err *ParsingErr) token() Token {
 	return err.actual
 }
 
-func (err *ParsingErr) addKind(kind AstKind) {
-	if err.kind == UnknownAstKind {
+func (err *ParsingErr) addKind(kind NodeKind) {
+	if err.kind == UnknownNodeKind {
 		err.kind = kind
 	}
 }
 
+func addKind(err ParserError, kind NodeKind) ParserError {
+	err.addKind(kind)
+	return err
+}
+
 func (err *ParsingErr) Error() string {
 	var sb strings.Builder
-	sb.WriteString(err.message)
+	sb.WriteString(err.text)
 	if len(err.expected) > 0 {
 		sb.WriteString("expected ")
 		for i, tok := range err.expected {
@@ -44,23 +49,23 @@ func (err *ParsingErr) Error() string {
 			sb.WriteString(delim)
 		}
 	}
-	return fmt.Sprintf("%s %s, found %s while parsing %s", err.actual.Range.Header(), sb.String(), err.actual.String(), err.kind.String())
+	return fmt.Sprintf("%s %s, found %s while parsing %s", err.actual.Positions.Header(), sb.String(), err.actual.String(), err.kind.String())
 }
 
-func makeMessageErr(actual Token, message string) ParserError {
-	return &ParsingErr{actual: actual, message: message}
+func makeTextErr(actual Token, text string) ParserError {
+	return &ParsingErr{actual: actual, text: text}
 }
 
 func makeExpectErr(actual Token, expected ...TokKind) ParserError {
 	return &ParsingErr{actual: actual, expected: expected}
 }
 
-type AstErr struct {
-	ast Ast
+type CodegenErr struct {
+	ast Node
 	msg string
 }
 
-func (err *AstErr) Error() string {
+func (err *CodegenErr) Error() string {
 	return err.ast.Header() + err.msg + " while inside " + err.ast.Kind().String()
 }
 

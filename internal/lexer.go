@@ -47,7 +47,9 @@ const (
 
 	// TokField etc. these are "fake" tokens which represents multiple "literal" tokens, which the parser may expect, but will never attempt to consume
 	TokField
-	TokType
+	TokTypeRef
+	TokTypeDef
+	TokTypeAlias
 	TokCase
 	TokOption
 )
@@ -108,8 +110,10 @@ func (k TokKind) String() string {
 		return "import"
 	case TokComment:
 		return "'//'"
-	case TokType:
-		return "type"
+	case TokTypeRef:
+		return "typeref"
+	case TokTypeDef:
+		return "typedef"
 	case TokField:
 		return "field"
 	case TokCase:
@@ -140,7 +144,7 @@ func (t TokVal) String() string {
 
 type Token struct {
 	TokVal
-	Range
+	Positions
 }
 
 func (t Token) String() string {
@@ -164,7 +168,7 @@ func makeLexer(input string) Lexer {
 
 func (lex *Lexer) emit(tok TokKind) {
 	val := lex.input[lex.start:lex.curr]
-	lex.tokens = append(lex.tokens, Token{TokVal{Kind: tok, Value: val}, Range{B: lex.start, E: lex.curr}})
+	lex.tokens = append(lex.tokens, Token{TokVal{Kind: tok, Value: val}, Positions{B: lex.start, E: lex.curr}})
 	lex.skip()
 }
 
@@ -195,7 +199,7 @@ func (lex *Lexer) emitText() {
 		tok = TokImport
 	}
 
-	lex.tokens = append(lex.tokens, Token{TokVal{Kind: tok, Value: str}, Range{B: lex.start, E: lex.curr}})
+	lex.tokens = append(lex.tokens, Token{TokVal{Kind: tok, Value: str}, Positions{B: lex.start, E: lex.curr}})
 	lex.skip()
 }
 
@@ -215,7 +219,7 @@ func (lex *Lexer) emitErr(expected TokKind) {
 	val := lex.input[lex.start:lex.curr]
 	token := Token{
 		TokVal{Kind: TokErr, Value: val, Expected: expected},
-		Range{B: lex.start, E: lex.curr},
+		Positions{B: lex.start, E: lex.curr},
 	}
 	lex.tokens = append(lex.tokens, token)
 	lex.skip()

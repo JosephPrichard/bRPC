@@ -9,187 +9,188 @@ const (
 	Optional
 )
 
-type AstKind int
+type NodeKind int
 
 const (
-	UnknownAstKind AstKind = iota
-	PropertyAstKind
-	ImportAstKind
-	StructAstKind
-	EnumAstKind
-	UnionAstKind
-	CaseAstKind
-	FieldAstKind
-	OptionAstKind
-	ServiceAstKind
-	RpcAstKind
-	TypeAstKind
-	ArrayAstKind
+	UnknownNodeKind NodeKind = iota
+	PropertyNodeKind
+	ImportNodeKind
+	MessageNodeKind
+	StructNodeKind
+	EnumNodeKind
+	UnionNodeKind
+	CaseNodeKind
+	FieldNodeKind
+	OptionNodeKind
+	ServiceNodeKind
+	RpcNodeKind
+	TypeRefNodeKind
 )
 
-func (kind AstKind) String() string {
+func (kind NodeKind) String() string {
 	switch kind {
-	case UnknownAstKind:
+	case UnknownNodeKind:
 		return "unknown"
-	case PropertyAstKind:
+	case PropertyNodeKind:
 		return "property"
-	case ImportAstKind:
+	case ImportNodeKind:
 		return "import"
-	case StructAstKind:
+	case MessageNodeKind:
+		return "message"
+	case StructNodeKind:
 		return "struct"
-	case EnumAstKind:
+	case EnumNodeKind:
 		return "enum"
-	case UnionAstKind:
+	case UnionNodeKind:
 		return "union"
-	case FieldAstKind:
+	case FieldNodeKind:
 		return "field"
-	case CaseAstKind:
+	case CaseNodeKind:
 		return "case"
-	case OptionAstKind:
+	case OptionNodeKind:
 		return "option"
-	case ServiceAstKind:
+	case ServiceNodeKind:
 		return "service"
-	case RpcAstKind:
+	case RpcNodeKind:
 		return "rpc"
-	case TypeAstKind:
+	case TypeRefNodeKind:
 		return "type"
-	case ArrayAstKind:
-		return "array"
 	default:
 		panic(fmt.Sprintf("assertion error: unknown AstKind: %d", kind))
 	}
 }
 
-type Ast interface {
-	Kind() AstKind
+// Node an ast represents a recursive ast node
+type Node interface {
+	Kind() NodeKind
 	Begin() int
 	End() int
 	Header() string
 	ClearPos()
+	IsPoisoned() bool
 }
-type Range struct {
+
+type Positions struct {
 	B int
 	E int
 }
 
-// Tags stores some common information we want to keep track for each Ast
+// Tags stores some common information we want to keep track for each Node
 type Tags struct {
 	Poisoned bool
 }
 
-type PropertyAst struct {
+type PropertyNode struct {
 	Tags
-	Range
+	Positions
 	Name  string
 	Value string
 }
 
-type ImportAst struct {
+type ImportNode struct {
 	Tags
-	Range
+	Positions
 	Path string
 }
 
-type StructAst struct {
+type StructNode struct {
 	Tags
-	Range
+	Positions
 	Table      *SymbolTable
-	Name       string // an empty string is an anonymous struct
-	Fields     []FieldAst
+	Name       string
+	Fields     []FieldNode
 	TypeParams []string
-	LocalDefs  []Ast
+	LocalDefs  []Node
 }
 
-type EnumAst struct {
+type FieldNode struct {
 	Tags
-	Range
-	Table *SymbolTable
-	Name  string // an empty string is an anonymous enum
-	Cases []CaseAst
+	Positions
+	Modifier Modifier
+	Name     string
+	Type     TypeRefNode
+	Ord      uint64
 }
 
-type CaseAst struct {
+type EnumNode struct {
+	Tags
+	Positions
+	Table *SymbolTable
+	Name  string
+	Size  uint64
+	Cases []CaseNode
+}
+
+type CaseNode struct {
 	Tags // an enum case still contains ast meta tags even though it is not a recursive AST
 	Name string
 	Ord  uint64
 }
 
-type UnionAst struct {
+type UnionNode struct {
 	Tags
-	Range
-	Table      *SymbolTable
-	Name       string // an empty string is an anonymous union
-	Options    []OptionAst
-	TypeParams []string
-	LocalDefs  []Ast
-}
-
-type FieldAst struct {
-	Tags
-	Range
-	Modifier Modifier
-	Name     string
-	Type     Ast
-	Ord      uint64
-}
-
-type OptionAst struct {
-	Tags
-	Range
-	Type Ast
-	Ord  uint64
-}
-
-type ServiceAst struct {
-	Tags
-	Range
+	Positions
 	Table      *SymbolTable
 	Name       string
-	Procedures []RpcAst
-	LocalDefs  []Ast
+	Size       uint64
+	Options    []OptionNode
+	TypeParams []string
+	LocalDefs  []Node
 }
 
-type RpcAst struct {
+type OptionNode struct {
 	Tags
-	Range
+	Positions
+	Type TypeRefNode
+	Ord  uint64
+}
+
+type ServiceNode struct {
+	Tags
+	Positions
+	Table      *SymbolTable
+	Name       string
+	Procedures []RpcNode
+	LocalDefs  []Node
+}
+
+type RpcNode struct {
+	Tags
+	Positions
 	Name string
 	Ord  uint64
-	Arg  Ast
-	Ret  Ast
+	Arg  TypeRefNode
+	Ret  TypeRefNode
 }
 
-type TypeRefAst struct {
+type TypeRefNode struct {
 	Tags
-	Range
+	Positions
 	Table    *SymbolTable
-	Alias    string // an empty string is not an alias
 	Iden     string
-	TypeArgs []Ast
+	TypeArgs []TypeRefNode
+	Array    []uint64
 }
 
-type TypeArrAst struct {
-	Tags
-	Range
-	Type Ast
-	Size []uint64 // 0 means the array is a dynamic array
+func (tags *Tags) IsPoisoned() bool {
+	return tags.Poisoned
 }
 
-func (ast *PropertyAst) Kind() AstKind { return PropertyAstKind }
-func (ast *ImportAst) Kind() AstKind   { return ImportAstKind }
-func (ast *StructAst) Kind() AstKind   { return StructAstKind }
-func (ast *EnumAst) Kind() AstKind     { return EnumAstKind }
-func (ast *UnionAst) Kind() AstKind    { return UnionAstKind }
-func (ast *ServiceAst) Kind() AstKind  { return ServiceAstKind }
-func (ast *RpcAst) Kind() AstKind      { return RpcAstKind }
-func (ast *OptionAst) Kind() AstKind   { return OptionAstKind }
-func (ast *FieldAst) Kind() AstKind    { return FieldAstKind }
-func (ast *TypeRefAst) Kind() AstKind  { return TypeAstKind }
-func (ast *TypeArrAst) Kind() AstKind  { return ArrayAstKind }
+func (ast *PropertyNode) Kind() NodeKind { return PropertyNodeKind }
+func (ast *ImportNode) Kind() NodeKind   { return ImportNodeKind }
+func (ast *StructNode) Kind() NodeKind   { return StructNodeKind }
+func (ast *EnumNode) Kind() NodeKind     { return EnumNodeKind }
+func (ast *UnionNode) Kind() NodeKind    { return UnionNodeKind }
+func (ast *ServiceNode) Kind() NodeKind  { return ServiceNodeKind }
+func (ast *FieldNode) Kind() NodeKind    { return FieldNodeKind }
+func (ast *OptionNode) Kind() NodeKind   { return OptionNodeKind }
+func (ast *RpcNode) Kind() NodeKind      { return RpcNodeKind }
+func (ast *TypeRefNode) Kind() NodeKind  { return TypeRefNodeKind }
 
-func (r *Range) Begin() int { return r.B }
-func (r *Range) End() int   { return r.E }
+func (r *Positions) Begin() int { return r.B }
+func (r *Positions) End() int   { return r.E }
 
-func (r *Range) Header() string {
+func (r *Positions) Header() string {
 	if r.B == r.E {
 		return fmt.Sprintf("%d: ", r.B)
 	} else {
@@ -197,50 +198,48 @@ func (r *Range) Header() string {
 	}
 }
 
-func (r *Range) ClearPos() {
+func (r *Positions) ClearPos() {
 	r.E = 0
 	r.B = 0
 }
 
-func Walk(visit func(Ast), ast Ast) {
+func WalkMeta(visit func(Node), ast Node) {
 	if ast == nil {
 		return
 	}
 	visit(ast)
 	switch ast := ast.(type) {
-	case *PropertyAst, *ImportAst:
-		// nothing to do
-	case *StructAst:
-		WalkList(visit, ast.LocalDefs)
+	case *PropertyNode, *ImportNode, *EnumNode:
+		// no children
+	case *StructNode:
+		WalkMetaList(visit, ast.LocalDefs)
 		for i := range ast.Fields {
-			Walk(visit, &ast.Fields[i])
+			field := &ast.Fields[i]
+			visit(field)
+			visit(&field.Type)
 		}
-	case *UnionAst:
-		WalkList(visit, ast.LocalDefs)
+	case *UnionNode:
+		WalkMetaList(visit, ast.LocalDefs)
 		for i := range ast.Options {
-			Walk(visit, &ast.Options[i])
+			option := &ast.Options[i]
+			visit(option)
+			visit(&option.Type)
 		}
-	case *ServiceAst:
-		WalkList(visit, ast.LocalDefs)
+	case *ServiceNode:
+		WalkMetaList(visit, ast.LocalDefs)
 		for i := range ast.Procedures {
-			Walk(visit, &ast.Procedures[i])
+			proc := &ast.Procedures[i]
+			visit(proc)
+			visit(&proc.Arg)
+			visit(&proc.Ret)
 		}
-	case *OptionAst:
-		Walk(visit, ast.Type)
-	case *FieldAst:
-		Walk(visit, ast.Type)
-	case *RpcAst:
-		Walk(visit, ast.Arg)
-		Walk(visit, ast.Ret)
-	case *TypeRefAst:
-		WalkList(visit, ast.TypeArgs)
-	case *TypeArrAst:
-		Walk(visit, ast.Type)
+	default:
+		panic(fmt.Sprintf("unsupported: walk call for ast type is not implemented: %T", ast))
 	}
 }
 
-func WalkList(visit func(Ast), asts []Ast) {
+func WalkMetaList(visit func(Node), asts []Node) {
 	for _, ast := range asts {
-		Walk(visit, ast)
+		WalkMeta(visit, ast)
 	}
 }
