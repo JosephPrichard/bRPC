@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -35,6 +34,9 @@ func addKind(err ParserError, kind NodeKind) ParserError {
 
 func (err *ParsingErr) Error() string {
 	var sb strings.Builder
+	sb.WriteString(err.actual.Positions.Header())
+	sb.WriteRune(' ')
+
 	sb.WriteString(err.text)
 	if len(err.expected) > 0 {
 		sb.WriteString("expected ")
@@ -49,7 +51,26 @@ func (err *ParsingErr) Error() string {
 			sb.WriteString(delim)
 		}
 	}
-	return fmt.Sprintf("%s %s, found %s while parsing %s", err.actual.Positions.Header(), sb.String(), err.actual.String(), err.kind.String())
+
+	sb.WriteString(", found ")
+	sb.WriteString(err.actual.String())
+	if err.kind != UnknownNodeKind {
+		sb.WriteString(" while parsing ")
+		sb.WriteString(err.kind.String())
+	}
+
+	var postfix string
+	switch err.actual.Expected {
+	case TokOrd:
+		postfix = ": an ord must contain an '@' followed by an integer"
+	case TokInteger:
+		postfix = ": an integer must only contain numeric characters"
+	default:
+		// no messages for other expected tokens
+	}
+	sb.WriteString(postfix)
+
+	return sb.String()
 }
 
 func makeTextErr(actual Token, text string) ParserError {
@@ -61,12 +82,12 @@ func makeExpectErr(actual Token, expected ...TokKind) ParserError {
 }
 
 type CodegenErr struct {
-	ast Node
-	msg string
+	node Node
+	msg  string
 }
 
 func (err *CodegenErr) Error() string {
-	return err.ast.Header() + err.msg + " while inside " + err.ast.Kind().String()
+	return err.node.Header() + err.msg + " while inside " + err.node.Kind().String()
 }
 
 func printErrors(errs []error, filePath string, printLine func(string)) {

@@ -16,16 +16,16 @@ func TestParser_Properties(t *testing.T) {
 	`
 
 	var errs []error
-	asts := runParser(input, &errs)
-	WalkMetaList(Node.ClearPos, asts)
+	nodes := runParser(input, &errs)
+	WalkMetaList(Node.ClearPos, nodes)
 
-	expectedAsts := []Node{
+	expectednodes := []Node{
 		&ImportNode{Path: "/services/schemas/animals"},
 		&PropertyNode{Name: "package", Value: "/hello/\\\"world\""},
 		&PropertyNode{Name: "constant", Value: "Value"},
 	}
 
-	assert.Equal(t, expectedAsts, asts)
+	assert.Equal(t, expectednodes, nodes)
 	assert.Nil(t, errs)
 }
 
@@ -41,17 +41,17 @@ func TestParser_Struct(t *testing.T) {
 			required one @1 Data3;
 	
 			message Data3 struct(A B) {
-				required one @1 A;;;
+				deprecated one @1 A;;;
 				required two @2 B;
 			}
 		}
 	}
 	`
 	var errs []error
-	asts := runParser(input, &errs)
-	WalkMetaList(Node.ClearPos, asts)
+	nodes := runParser(input, &errs)
+	WalkMetaList(Node.ClearPos, nodes)
 
-	expectedAsts := []Node{
+	expectednodes := []Node{
 		&StructNode{
 			Name: "Data1",
 			Fields: []FieldNode{
@@ -86,7 +86,7 @@ func TestParser_Struct(t *testing.T) {
 							Name:       "Data3",
 							TypeParams: []string{"A", "B"},
 							Fields: []FieldNode{
-								{Modifier: Required, Name: "one", Ord: 1, Type: TypeRefNode{Iden: "A"}},
+								{Modifier: Deprecated, Name: "one", Ord: 1, Type: TypeRefNode{Iden: "A"}},
 								{Modifier: Required, Name: "two", Ord: 2, Type: TypeRefNode{Iden: "B"}},
 							},
 						},
@@ -96,7 +96,7 @@ func TestParser_Struct(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, expectedAsts, asts)
+	assert.Equal(t, expectednodes, nodes)
 	assert.Nil(t, errs)
 }
 
@@ -109,10 +109,10 @@ func TestParser_Enum(t *testing.T) {
 	}
 	`
 	var errs []error
-	asts := runParser(input, &errs)
-	WalkMetaList(Node.ClearPos, asts)
+	nodes := runParser(input, &errs)
+	WalkMetaList(Node.ClearPos, nodes)
 
-	expectedAsts := []Node{
+	expectednodes := []Node{
 		&EnumNode{
 			Name: "Data1",
 			Size: 16,
@@ -124,7 +124,7 @@ func TestParser_Enum(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, expectedAsts, asts)
+	assert.Equal(t, expectednodes, nodes)
 	assert.Nil(t, errs)
 }
 
@@ -142,10 +142,10 @@ func TestParser_Union(t *testing.T) {
 	}
 	`
 	var errs []error
-	asts := runParser(input, &errs)
-	WalkMetaList(Node.ClearPos, asts)
+	nodes := runParser(input, &errs)
+	WalkMetaList(Node.ClearPos, nodes)
 
-	expectedAsts := []Node{
+	expectednodes := []Node{
 		&UnionNode{
 			Name:       "Data",
 			Size:       8,
@@ -177,7 +177,7 @@ func TestParser_Union(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, expectedAsts, asts)
+	assert.Equal(t, expectednodes, nodes)
 	assert.Nil(t, errs)
 }
 
@@ -193,10 +193,10 @@ func TestParser_Service(t *testing.T) {
 	}
 	`
 	var errs []error
-	asts := runParser(input, &errs)
-	WalkMetaList(Node.ClearPos, asts)
+	nodes := runParser(input, &errs)
+	WalkMetaList(Node.ClearPos, nodes)
 
-	expectedAsts := []Node{
+	expectednodes := []Node{
 		&ServiceNode{
 			Name: "ServiceA",
 			Procedures: []RpcNode{
@@ -225,7 +225,7 @@ func TestParser_Service(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, expectedAsts, asts)
+	assert.Equal(t, expectednodes, nodes)
 	assert.Nil(t, errs)
 }
 
@@ -233,7 +233,7 @@ func TestParser_Errors(t *testing.T) {
 	type Test struct {
 		name  string
 		input string
-		asts  []Node
+		nodes []Node
 		errs  []error
 	}
 
@@ -244,7 +244,7 @@ func TestParser_Errors(t *testing.T) {
 			message Data1 struct {
 				required one @1 b128;
 			`,
-			asts: []Node{
+			nodes: []Node{
 				&StructNode{
 					Tags: Tags{Poisoned: true},
 					Name: "Data1",
@@ -268,7 +268,7 @@ func TestParser_Errors(t *testing.T) {
 				message Data2 union {
 					message Data3 struct {
 			`,
-			asts: []Node{
+			nodes: []Node{
 				&StructNode{
 					Tags: Tags{Poisoned: true},
 					Name: "Data1",
@@ -298,7 +298,7 @@ func TestParser_Errors(t *testing.T) {
 			message Data [5]struct {
 				required one @1 b128;
 			}`,
-			asts: []Node{
+			nodes: []Node{
 				&StructNode{
 					Name: "Data",
 					Fields: []FieldNode{
@@ -315,16 +315,26 @@ func TestParser_Errors(t *testing.T) {
 			},
 		},
 		{
-			name: "InvalidArraySize",
+			name: "InvalidStruct",
 			input: `
 			message Data struct {
 				required one @1 [5a]b128;
+			}
+			message Data_1 struct {
+				required one @1 b128;
 			}`,
-			asts: []Node{
+			nodes: []Node{
 				&StructNode{
 					Name: "Data",
 					Fields: []FieldNode{
 						{Tags: Tags{Poisoned: true}, Modifier: Required, Name: "one", Ord: 1},
+					},
+				},
+				&StructNode{
+					Name: "Data_1",
+					Tags: Tags{Poisoned: true},
+					Fields: []FieldNode{
+						{Modifier: Required, Name: "one", Ord: 1, Type: TypeRefNode{Iden: "b128"}},
 					},
 				},
 			},
@@ -333,6 +343,11 @@ func TestParser_Errors(t *testing.T) {
 					actual:   Token{TokVal{Kind: TokErr, Value: "5a", Expected: TokInteger}, Positions{B: 47, E: 49}},
 					kind:     TypeRefNodeKind,
 					expected: []TokKind{TokInteger, TokRBrack},
+				},
+				&ParsingErr{
+					actual: Token{TokVal{Kind: TokIden, Value: "Data_1"}, Positions{B: 72, E: 78}},
+					kind:   MessageNodeKind,
+					text:   "iden must only contain alphanumeric characters",
 				},
 			},
 		},
@@ -347,7 +362,7 @@ func TestParser_Errors(t *testing.T) {
 					required one @1;
 				}
 			}`,
-			asts: []Node{
+			nodes: []Node{
 				&StructNode{
 					Tags: Tags{Poisoned: true},
 					Name: "Data1",
@@ -394,7 +409,7 @@ func TestParser_Errors(t *testing.T) {
 					Two;
 				}
 			}`,
-			asts: []Node{
+			nodes: []Node{
 				&StructNode{
 					Name: "Data3",
 					Fields: []FieldNode{
@@ -439,7 +454,7 @@ func TestParser_Errors(t *testing.T) {
 				@2 2 TWO;
 				THREE;
 			}`,
-			asts: []Node{
+			nodes: []Node{
 				&EnumNode{
 					Tags: Tags{Poisoned: true},
 					Name: "Data4",
@@ -471,7 +486,7 @@ func TestParser_Errors(t *testing.T) {
 				two two two two two @2 []b5;
 				required three @3 b128
 			}`,
-			asts: []Node{
+			nodes: []Node{
 				&StructNode{
 					Tags: Tags{Poisoned: true},
 					Name: "Data",
@@ -507,7 +522,7 @@ func TestParser_Errors(t *testing.T) {
 				required one @1 b128;
 				rpc @2 World(Test1) returns ()
 			}`,
-			asts: []Node{
+			nodes: []Node{
 				&ServiceNode{
 					Tags: Tags{Poisoned: true},
 					Name: "Data",
@@ -540,15 +555,15 @@ func TestParser_Errors(t *testing.T) {
 	for _, test := range tests {
 		t.Run(fmt.Sprintf("test/%s", test.name), func(t *testing.T) {
 			var errs []error
-			asts := runParser(test.input, &errs)
-			WalkMetaList(Node.ClearPos, asts)
+			nodes := runParser(test.input, &errs)
+			WalkMetaList(Node.ClearPos, nodes)
 
 			printLine := func(err string) {
 				t.Log(err)
 			}
 			printErrors(errs, "test", printLine)
 
-			assert.Equal(t, test.asts, asts)
+			assert.Equal(t, test.nodes, nodes)
 			assert.Equal(t, test.errs, errs)
 		})
 	}

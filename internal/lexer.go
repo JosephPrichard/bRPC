@@ -33,6 +33,7 @@ const (
 	// TokRequired etc., are "literal" tokens which represent extract symbols for controlling AST creation
 	TokRequired
 	TokOptional
+	TokDeprecated
 	TokStruct
 	TokUnion
 	TokEnum
@@ -49,7 +50,6 @@ const (
 	TokField
 	TokTypeRef
 	TokTypeDef
-	TokTypeAlias
 	TokCase
 	TokOption
 )
@@ -96,6 +96,8 @@ func (k TokKind) String() string {
 		return "required"
 	case TokOptional:
 		return "optional"
+	case TokDeprecated:
+		return "deprecated"
 	case TokStruct:
 		return "struct"
 	case TokUnion:
@@ -128,7 +130,7 @@ func (k TokKind) String() string {
 type TokVal struct {
 	Kind     TokKind
 	Value    string
-	Expected TokKind // the expected value for this token, only populated if Kind is TokErr
+	Expected TokKind // the expected token whenever an error is occurred, only populated for Kind of TokErr
 }
 
 func (t TokVal) String() string {
@@ -175,31 +177,33 @@ func (lex *Lexer) emit(tok TokKind) {
 func (lex *Lexer) emitText() {
 	str := lex.input[lex.start:lex.curr]
 
-	tok := TokIden
+	kind := TokIden
 	switch str {
 	case "struct":
-		tok = TokStruct
+		kind = TokStruct
 	case "union":
-		tok = TokUnion
+		kind = TokUnion
 	case "enum":
-		tok = TokEnum
+		kind = TokEnum
 	case "message":
-		tok = TokMessage
+		kind = TokMessage
 	case "service":
-		tok = TokService
+		kind = TokService
 	case "required":
-		tok = TokRequired
+		kind = TokRequired
 	case "optional":
-		tok = TokOptional
+		kind = TokOptional
+	case "deprecated":
+		kind = TokDeprecated
 	case "returns":
-		tok = TokReturns
+		kind = TokReturns
 	case "rpc":
-		tok = TokRpc
+		kind = TokRpc
 	case "import":
-		tok = TokImport
+		kind = TokImport
 	}
 
-	lex.tokens = append(lex.tokens, Token{TokVal{Kind: tok, Value: str}, Positions{B: lex.start, E: lex.curr}})
+	lex.tokens = append(lex.tokens, Token{TokVal{Kind: kind, Value: str}, Positions{B: lex.start, E: lex.curr}})
 	lex.skip()
 }
 
@@ -295,13 +299,13 @@ func (lex *Lexer) run() {
 }
 
 func (lex *Lexer) lexInteger() {
-	tok := TokInteger
+	kind := TokInteger
 	lex.acceptWhile(numeric)
 	if !lex.assert(whitespace + control) {
-		lex.emitErr(tok)
+		lex.emitErr(kind)
 		return
 	}
-	lex.emit(tok)
+	lex.emit(kind)
 }
 
 func (lex *Lexer) lexComment() {
@@ -315,18 +319,18 @@ func (lex *Lexer) lexComment() {
 }
 
 func (lex *Lexer) lexOrd() {
-	tok := TokOrd
+	kind := TokOrd
 	lex.next()
 	lex.acceptWhile(numeric)
 	if !lex.assert(whitespace + control) {
-		lex.emitErr(tok)
+		lex.emitErr(kind)
 		return
 	}
 	if lex.curr-lex.start <= 1 {
-		lex.emitErr(tok)
+		lex.emitErr(kind)
 		return
 	}
-	lex.emit(tok)
+	lex.emit(kind)
 }
 
 func (lex *Lexer) lexText() {

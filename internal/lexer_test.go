@@ -50,7 +50,7 @@ func TestLexer_Struct(t *testing.T) {
 	}
 
 	message Data2 struct[A, B] {
-		required one @1 A;
+		deprecated one @1 A;
         required two @2 B;
 	}
 	`
@@ -91,7 +91,7 @@ func TestLexer_Struct(t *testing.T) {
 		{Kind: TokIden, Value: "B"},
 		{Kind: TokRBrack, Value: "]"},
 		{Kind: TokLBrace, Value: "{"},
-		{Kind: TokRequired, Value: "required"},
+		{Kind: TokDeprecated, Value: "deprecated"},
 		{Kind: TokIden, Value: "one"},
 		{Kind: TokOrd, Value: "@1"},
 		{Kind: TokIden, Value: "A"},

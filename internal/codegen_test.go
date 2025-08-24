@@ -7,8 +7,6 @@ import (
 
 func TestCodegen_Structs(t *testing.T) {
 	input := `
-	package = "data"
-
 	text Data1 struct {
 		required one @1 b128;
 		required two @2 []b5;
@@ -18,7 +16,7 @@ func TestCodegen_Structs(t *testing.T) {
 	`
 
 	var errs []error
-	output := runCodeBuilder(input, &errs)
+	output := runCodeBuilder(input, "data", &errs)
 
 	expectedErrs := []error{}
 

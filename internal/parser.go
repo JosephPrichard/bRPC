@@ -6,12 +6,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 type Parser struct {
 	tokens    []Token
 	curr      int
-	asts      []Node
+	nodes     []Node
 	errs      *[]error
 	hasEofErr bool // stores whether an error has been emitted after token stream has reached eof
 }
@@ -27,7 +28,7 @@ func runParser(program string, errs *[]error) []Node {
 	p := makeParser(lex.tokens, errs)
 	p.parse()
 
-	return p.asts
+	return p.nodes
 }
 
 func (p *Parser) next() Token {
@@ -89,7 +90,7 @@ func (p *Parser) expectChain(chain ...TokKind) ParserError {
 var EatTokens = []TokKind{TokSemicolon}
 
 // StopTokens sentinel tokens which are stopped at during forwarding
-var StopTokens = []TokKind{TokLBrace, TokRBrace, TokService, TokRpc, TokRequired, TokOptional, TokMessage, TokStruct, TokUnion, TokEnum}
+var StopTokens = []TokKind{TokLBrace, TokRBrace, TokService, TokRpc, TokRequired, TokOptional, TokDeprecated, TokMessage, TokStruct, TokUnion, TokEnum}
 
 func (p *Parser) skipUntilSentinel() {
 	for {
@@ -130,13 +131,13 @@ func (p *Parser) parse() {
 			p.skipUntilSentinel()
 		}
 		if root != nil {
-			p.asts = append(p.asts, root)
+			p.nodes = append(p.nodes, root)
 		}
 	}
 }
 
 func (p *Parser) parseRoot() (Node, error) {
-	var ast Node
+	var node Node
 	var err error
 
 	token := p.peek()
@@ -145,31 +146,31 @@ func (p *Parser) parseRoot() (Node, error) {
 		return nil, Eof
 	case TokMessage:
 		p.eat()
-		ast, err = p.parseMessage()
+		node, err = p.parseMessage()
 	case TokService:
-		ast = p.parseService()
+		node = p.parseService()
 	case TokImport:
-		ast = p.parseImport()
+		node = p.parseImport()
 	case TokIden:
-		ast = p.parseProperty()
+		node = p.parseProperty()
 	default:
 		p.eat()
 		err = makeExpectErr(token, TokMessage, TokService, TokImport, TokIden)
 	}
 
-	return ast, err
+	return node, err
 }
 
 func (p *Parser) parseProperty() Node {
-	var property PropertyNode
+	var prop PropertyNode
 
 	forwardErr := func(err ParserError) Node {
-		property.E = err.token().E
-		property.Poisoned = true
+		prop.E = err.token().E
+		prop.Poisoned = true
 		err.addKind(PropertyNodeKind)
 		p.skipUntilSentinel()
 		p.emitError(err)
-		return &property
+		return &prop
 	}
 
 	var token Token
@@ -178,8 +179,8 @@ func (p *Parser) parseProperty() Node {
 	if err != nil {
 		panic(fmt.Sprintf("assertion error: %s", err))
 	}
-	property.B = token.B
-	property.Name = token.Value
+	prop.B = token.B
+	prop.Name = token.Value
 
 	if _, err := p.expect(TokEqual); err != nil {
 		return forwardErr(err)
@@ -189,10 +190,10 @@ func (p *Parser) parseProperty() Node {
 	if err != nil {
 		return forwardErr(err)
 	}
-	property.E = token.E
-	property.Value = str
+	prop.E = token.E
+	prop.Value = str
 
-	return &property
+	return &prop
 }
 
 var escSeqTable = map[rune]rune{'\\': '\\', 'n': '\n', '\t': '\t', 'f': '\f', 'r': '\r', '"': '"'}
@@ -263,9 +264,11 @@ func (p *Parser) parseImport() Node {
 	return &imp
 }
 
+const DefaultMSize = 16
+
 func (p *Parser) parseMessageSize(callKind NodeKind) (uint64, ParserError) {
 	if token := p.peek(); token.Kind != TokLBrack {
-		return 16, nil // defaults to 16 when size is not provided - struct will never use this
+		return DefaultMSize, nil // defaults when size is not provided - struct will never use this
 	}
 	p.eat()
 
@@ -288,6 +291,18 @@ func (p *Parser) parseMessageSize(callKind NodeKind) (uint64, ParserError) {
 	return size, nil
 }
 
+func checkName(name string) bool {
+	for i, c := range name {
+		if i == 0 && unicode.IsLower(c) {
+			return false
+		}
+		if !unicode.IsLetter(c) && !unicode.IsNumber(c) {
+			return false
+		}
+	}
+	return true
+}
+
 func (p *Parser) parseMessage() (Node, ParserError) {
 	var token Token
 	var err ParserError
@@ -300,28 +315,37 @@ func (p *Parser) parseMessage() (Node, ParserError) {
 		return nil, addKind(err, kind)
 	}
 	name := token.Value
+	nameOk := checkName(name)
+	if !nameOk {
+		err := makeTextErr(token, "iden must begin with an uppercase and only contain alphanumerics")
+		p.emitError(addKind(err, kind))
+	}
 
 	size, err := p.parseMessageSize(kind)
 	if err != nil {
 		return nil, addKind(err, kind)
 	}
 
-	var ast Node
+	var node Node
 
 	token = p.peek()
 	switch token.Kind {
 	case TokStruct:
-		ast = p.parseStruct(name)
+		node = p.parseStruct(name)
 	case TokEnum:
-		ast = p.parseEnum(name, size)
+		node = p.parseEnum(name, size)
 	case TokUnion:
-		ast = p.parseUnion(name, size)
+		node = p.parseUnion(name, size)
 	default:
 		p.eat()
 		err = addKind(makeExpectErr(token, TokTypeDef), kind)
 	}
+	if node != nil && !nameOk {
+		// we still want to parse the message if the message name is invalid, but the ast should not be part of the codegen stage
+		node.SetPoisoned()
+	}
 
-	return ast, err
+	return node, err
 }
 
 func (p *Parser) parseTypeParams() ([]string, ParserError) {
@@ -353,8 +377,7 @@ func (p *Parser) parseTypeParams() ([]string, ParserError) {
 }
 
 func (p *Parser) parseStruct(name string) Node {
-	var strct StructNode
-	strct.Name = name
+	strct := StructNode{Name: name}
 
 	forwardErr := func(err ParserError) {
 		strct.E = err.token().E
@@ -380,7 +403,7 @@ func (p *Parser) parseStruct(name string) Node {
 	for {
 		token := p.next()
 		switch token.Kind {
-		case TokOptional, TokRequired:
+		case TokOptional, TokRequired, TokDeprecated:
 			p.prev()
 			field := p.parseField()
 			strct.Fields = append(strct.Fields, field)
@@ -438,9 +461,7 @@ func (p *Parser) parseOption() OptionNode {
 }
 
 func (p *Parser) parseUnion(name string, size uint64) Node {
-	var union UnionNode
-	union.Name = name
-	union.Size = size
+	union := UnionNode{Name: name, Size: size}
 
 	forwardErr := func(err ParserError) {
 		union.E = err.token().E
@@ -531,9 +552,7 @@ func (p *Parser) parseCase() CaseNode {
 }
 
 func (p *Parser) parseEnum(name string, size uint64) Node {
-	var enum EnumNode
-	enum.Name = name
-	enum.Size = size
+	enum := EnumNode{Name: name, Size: size}
 
 	forwardErr := func(err ParserError) {
 		enum.E = err.token().E
@@ -650,13 +669,13 @@ func (p *Parser) parseTypeRef() (TypeRefNode, ParserError) {
 			if err != nil {
 				return forwardErr(err)
 			}
-			ast := TypeRefNode{
+			node := TypeRefNode{
 				Iden:      iden,
 				Array:     array,
 				TypeArgs:  typeArgs,
 				Positions: Positions{B: tokenB.B, E: tokenE.E},
 			}
-			return ast, nil
+			return node, nil
 		default:
 			return TypeRefNode{}, makeExpectErr(token, TokTypeRef)
 		}
@@ -676,7 +695,7 @@ func (p *Parser) parseOrdWithToken(token *Token) (uint64, ParserError) {
 	}
 	*token = t
 	if len(token.Value) < 2 {
-		panic(fmt.Errorf("assertion error: an ord should have at least 2 characters"))
+		panic("assertion error: an ord should have at least 2 characters")
 	}
 	ord, strErr := strconv.ParseUint(token.Value[1:], 10, 64)
 	if strErr != nil {
@@ -709,8 +728,10 @@ func (p *Parser) parseField() FieldNode {
 		field.Modifier = Required
 	case TokOptional:
 		field.Modifier = Optional
+	case TokDeprecated:
+		field.Modifier = Deprecated
 	default:
-		return forwardErr(makeExpectErr(token, TokRequired, TokOptional))
+		return forwardErr(makeExpectErr(token, TokRequired, TokOptional, TokDeprecated))
 	}
 
 	if token, err = p.expect(TokIden); err != nil {
