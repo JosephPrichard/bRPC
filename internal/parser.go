@@ -218,7 +218,7 @@ func (p *Parser) parseString(token *Token) (string, ParserError) {
 		if isEscaped {
 			ch, ok := escSeqTable[ch]
 			if !ok {
-				return "", makeTextErr(*token, fmt.Sprintf("invalid escape sequence: '/%c'", ch))
+				return "", makeEscSeqErr(*token, ch)
 			}
 			isEscaped = false
 			sb.WriteRune(ch)
@@ -286,12 +286,12 @@ func (p *Parser) parseMessageSize(callKind NodeKind) (uint64, ParserError) {
 
 	// if the next token is a struct, emit an error, but not return the error to caller, we wish to continue parsing
 	if p.peek().Kind == TokStruct {
-		p.emitError(addKind(makeTextErr(token, "struct does not allow a size argument"), callKind))
+		p.emitError(makeKindErr(token, SizeErrKind).withKind(callKind))
 	}
 	return size, nil
 }
 
-func checkName(name string) bool {
+func validateMsgName(name string) bool {
 	for i, c := range name {
 		if i == 0 && unicode.IsLower(c) {
 			return false
@@ -309,21 +309,20 @@ func (p *Parser) parseMessage() (Node, ParserError) {
 
 	kind := MessageNodeKind
 
-	// invariant: assume that 'text' token has been consumed
+	// invariant: assume that 'errKind' token has been consumed
 	token, err = p.expect(TokIden)
 	if err != nil {
-		return nil, addKind(err, kind)
+		return nil, err.withKind(kind)
 	}
 	name := token.Value
-	nameOk := checkName(name)
+	nameOk := validateMsgName(name)
 	if !nameOk {
-		err := makeTextErr(token, "iden must begin with an uppercase and only contain alphanumerics")
-		p.emitError(addKind(err, kind))
+		p.emitError(makeKindErr(token, IdenErrKind).withKind(kind))
 	}
 
 	size, err := p.parseMessageSize(kind)
 	if err != nil {
-		return nil, addKind(err, kind)
+		return nil, err.withKind(kind)
 	}
 
 	var node Node
@@ -331,18 +330,14 @@ func (p *Parser) parseMessage() (Node, ParserError) {
 	token = p.peek()
 	switch token.Kind {
 	case TokStruct:
-		node = p.parseStruct(name)
+		node = p.parseStruct(name, nameOk)
 	case TokEnum:
-		node = p.parseEnum(name, size)
+		node = p.parseEnum(name, nameOk, size)
 	case TokUnion:
-		node = p.parseUnion(name, size)
+		node = p.parseUnion(name, nameOk, size)
 	default:
 		p.eat()
-		err = addKind(makeExpectErr(token, TokTypeDef), kind)
-	}
-	if node != nil && !nameOk {
-		// we still want to parse the message if the message name is invalid, but the ast should not be part of the codegen stage
-		node.SetPoisoned()
+		err = makeExpectErr(token, TokTypeDef).withKind(kind)
 	}
 
 	return node, err
@@ -376,8 +371,9 @@ func (p *Parser) parseTypeParams() ([]string, ParserError) {
 	return typeParams, nil
 }
 
-func (p *Parser) parseStruct(name string) Node {
+func (p *Parser) parseStruct(name string, nameOk bool) Node {
 	strct := StructNode{Name: name}
+	strct.Poisoned = !nameOk
 
 	forwardErr := func(err ParserError) {
 		strct.E = err.token().E
@@ -447,11 +443,11 @@ func (p *Parser) parseOption() OptionNode {
 	option.B = token.B
 	option.Ord = ord
 
-	typ, err := p.parseTypeRef()
+	token, err = p.expect(TokIden)
 	if err != nil {
 		return forwardErr(err)
 	}
-	option.Type = typ
+	option.Type = TypeVal{Iden: token.Value}
 
 	if firstToken, ok := p.eatWhile(TokSemicolon); !ok {
 		return forwardErr(makeExpectErr(firstToken, TokSemicolon))
@@ -460,8 +456,9 @@ func (p *Parser) parseOption() OptionNode {
 	return option
 }
 
-func (p *Parser) parseUnion(name string, size uint64) Node {
+func (p *Parser) parseUnion(name string, nameOk bool, size uint64) Node {
 	union := UnionNode{Name: name, Size: size}
+	union.Poisoned = !nameOk
 
 	forwardErr := func(err ParserError) {
 		union.E = err.token().E
@@ -517,7 +514,7 @@ func (p *Parser) parseNumeric() (int64, ParserError) {
 	}
 	value, convErr := strconv.ParseInt(token.Value, 10, 64)
 	if convErr != nil {
-		return 0, makeTextErr(token, fmt.Sprintf("%v: %s is not a valid integer", err, token.String()))
+		return 0, makeKindErr(token, NumErrKind)
 	}
 	return value, nil
 }
@@ -551,8 +548,9 @@ func (p *Parser) parseCase() CaseNode {
 	return ec
 }
 
-func (p *Parser) parseEnum(name string, size uint64) Node {
+func (p *Parser) parseEnum(name string, nameOk bool, size uint64) Node {
 	enum := EnumNode{Name: name, Size: size}
+	enum.Poisoned = !nameOk
 
 	forwardErr := func(err ParserError) {
 		enum.E = err.token().E
@@ -610,8 +608,8 @@ func (p *Parser) parseArraySize() (uint64, ParserError) {
 	}
 }
 
-func (p *Parser) parseTypeArgs(token *Token) ([]TypeRefNode, ParserError) {
-	var typeArgs []TypeRefNode
+func (p *Parser) parseTypeArgs(token *Token) ([]TypeNode, ParserError) {
+	var typeArgs []TypeNode
 
 	if p.peek().Kind != TokLParen {
 		return typeArgs, nil
@@ -623,7 +621,7 @@ func (p *Parser) parseTypeArgs(token *Token) ([]TypeRefNode, ParserError) {
 			*token = p.next()
 			return typeArgs, nil
 		}
-		typ, err := p.parseTypeRef()
+		typ, err := p.parseType()
 		if err != nil {
 			return nil, err
 		}
@@ -631,15 +629,15 @@ func (p *Parser) parseTypeArgs(token *Token) ([]TypeRefNode, ParserError) {
 	}
 }
 
-func (p *Parser) parseTypeRef() (TypeRefNode, ParserError) {
+func (p *Parser) parseType() (TypeNode, ParserError) {
 	// each element of the array is a nested array index
 	var array []uint64
 	var arrTokenB Token
 
-	forwardErr := func(err ParserError) (TypeRefNode, ParserError) {
-		err.addKind(TypeRefNodeKind)
+	forwardErr := func(err ParserError) (TypeNode, ParserError) {
+		err.addKind(TypeNodeKind)
 		// don't emit the error, caller will handle this
-		return TypeRefNode{}, err
+		return TypeNode{}, err
 	}
 
 	for {
@@ -669,15 +667,15 @@ func (p *Parser) parseTypeRef() (TypeRefNode, ParserError) {
 			if err != nil {
 				return forwardErr(err)
 			}
-			node := TypeRefNode{
-				Iden:      iden,
+			node := TypeNode{
+				TypeVal:   TypeVal{Iden: iden},
 				Array:     array,
 				TypeArgs:  typeArgs,
 				Positions: Positions{B: tokenB.B, E: tokenE.E},
 			}
 			return node, nil
 		default:
-			return TypeRefNode{}, makeExpectErr(token, TokTypeRef)
+			return TypeNode{}, makeExpectErr(token, TokTypeRef)
 		}
 	}
 }
@@ -744,7 +742,7 @@ func (p *Parser) parseField() FieldNode {
 	}
 	field.Ord = ord
 
-	typ, err := p.parseTypeRef()
+	typ, err := p.parseType()
 	if err != nil {
 		return forwardErr(err)
 	}
@@ -844,7 +842,7 @@ func (p *Parser) parseRpc() RpcNode {
 		return forwardErr(err)
 	}
 
-	typ, err := p.parseTypeRef()
+	typ, err := p.parseType()
 	if err != nil {
 		return forwardErr(err)
 	}
@@ -854,7 +852,7 @@ func (p *Parser) parseRpc() RpcNode {
 		return forwardErr(err)
 	}
 
-	typ, err = p.parseTypeRef()
+	typ, err = p.parseType()
 	if err != nil {
 		return forwardErr(err)
 	}

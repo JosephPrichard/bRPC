@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -24,103 +25,149 @@ func (t *TypeTable) getNode(iden string) Node {
 	return nil
 }
 
-// Pass One
-// 1: prepares symbol tables (later used for type args)
-// 2: check for redefined types
-// 3: lower IDL types into golang types
-func prepareTypeTables(nodes []Node, prev *TypeTable, errs *[]error) {
+func prepareTypes(nodes []Node, prev *TypeTable, errs *[]error) {
 	table := &TypeTable{m: make(map[string]Node), prev: prev}
 
 	insertTable := func(iden string, node Node) {
-		_, exists := table.m[iden]
-		// 2: redefined types lead to errors, but shadowing is legal
-		if exists {
-			*errs = append(*errs, &CodegenErr{node: node, msg: fmt.Sprintf("\"%s\" is redefined", iden)})
+		if _, exists := table.m[iden]; exists {
+			*errs = append(*errs, makeRedefinedErr(node, iden))
 		}
-		// 1: this may cause cycles if a child ast refers to a parent ast - this must be detected in a future pass
 		table.m[iden] = node
 	}
 
 	for _, n := range nodes {
-		n.SetTable(table)
-
 		switch node := n.(type) {
 		case *StructNode:
-			// 3: lowering fields
-			node.IterStruct(func(node *FieldNode) {
-				lowerType(&node.Type)
-			})
-			// 1,2: preparing tables
+			node.Table = table
+			for i := range node.Fields {
+				convertTypeNode(&node.Fields[i].Type)
+			}
 			insertTable(node.Name, node)
-			// recursive call for nested definitions
-			prepareTypeTables(node.LocalDefs, table, errs)
+			prepareTypes(node.LocalDefs, table, errs)
 		case *UnionNode:
-			// 3: lowering options
-			node.IterOptions(func(node *OptionNode) {
-				lowerType(&node.Type)
-			})
-			// 1,2: preparing tables
+			node.Table = table
+			for i := range node.Options {
+				option := &node.Options[i]
+				option.Type = convertType(option.Type)
+			}
 			insertTable(node.Name, node)
-			// recursive call for nested definitions
-			prepareTypeTables(node.LocalDefs, table, errs)
+			prepareTypes(node.LocalDefs, table, errs)
 		case *EnumNode:
+			node.Table = table
 			insertTable(node.Name, node)
 		case *ServiceNode:
-			// 3: lowering procedures
-			node.IterProcedures(func(node *RpcNode) {
-				lowerType(&node.Arg)
-				lowerType(&node.Ret)
-			})
-			// 1,2: preparing tables
+			node.Table = table
+			for i := range node.Procedures {
+				proc := &node.Procedures[i]
+				convertTypeNode(&proc.Arg)
+				convertTypeNode(&proc.Ret)
+			}
 			insertTable(node.Name, node)
-			// recursive call for nested definitions
-			prepareTypeTables(node.LocalDefs, table, errs)
+			prepareTypes(node.LocalDefs, table, errs)
 		}
 	}
 }
 
-var BitLevels = []int{8, 16, 32, 64}
+var IntSizes = []int{8, 16, 32, 64}
 
-func lowerType(node *TypeRefNode) {
-	// try to lower the iden to a primitive, or just lower it into itself
-	index := strings.Index(node.Iden, "int")
+func convertTypeNode(node *TypeNode) {
+	node.TypeVal = convertType(node.TypeVal)
+}
+
+func convertType(t TypeVal) TypeVal {
+	// attempt to convert to a primitive first, otherwise keep the type as itself
+	index := strings.Index(t.Iden, "int")
 	if index < 0 {
-		return
+		return t
 	}
-	bitsStr := node.Iden[index+2:]
+	bitsStr := t.Iden[index+2:]
 	bits, err := strconv.Atoi(bitsStr)
 	if err != nil {
-		return
+		return t
 	}
 
-	for _, bitLevel := range BitLevels {
-		if bits <= bitLevel {
-			node.Iden = fmt.Sprintf("int%d", bitLevel)
-			node.Primitive = true
-			return
+	// map to a fix sized primitive, or a big integer if that is not possible (>= 64 bits)
+	for _, size := range IntSizes {
+		if bits <= size {
+			iden := fmt.Sprintf("int%d", size)
+			return TypeVal{Iden: iden, Primitive: true}
 		}
 	}
-	node.Iden = "big.Int"
-	node.Primitive = true
+	return TypeVal{Iden: "big.Int", Primitive: true}
 }
 
-// Pass Two
-// 1: field orders start from one and are monotonically increasing by 1
-// 2: identifier are resolved to a valid ast with valid type arguments
-// 3: graph does not contain any cycles
-func checkPreconditions(nodes []Node, errs *[]error) {
+type iterOrdElem struct {
+	ord  uint64
+	node Node
+}
 
+func checkNodeOrder(errs *[]error, count int, elemAt func(int) iterOrdElem) {
+	prev := uint64(0)
+	for i := range count {
+		e := elemAt(i)
+		var err error
+		if i == 0 && e.ord != 1 {
+			err = makeFirstOrdErr(e.node)
+		} else if e.ord != prev+1 {
+			err = makeOrdErr(e.node, e.ord, prev+1)
+		}
+		if err != nil {
+			*errs = append(*errs, err)
+			break
+		}
+		prev++
+	}
+}
+
+func checkFieldOrder(node *StructNode, errs *[]error) {
+	fields := node.Fields
+	slices.SortFunc(fields, func(n1, n2 FieldNode) int { return cmpOrd(n1.Ord, n2.Ord) })
+	checkNodeOrder(errs, len(fields), func(i int) iterOrdElem { return iterOrdElem{ord: fields[i].Ord, node: &fields[i]} })
+}
+
+func checkUnionOrder(node *UnionNode, errs *[]error) {
+	options := node.Options
+	slices.SortFunc(options, func(n1, n2 OptionNode) int { return cmpOrd(n1.Ord, n2.Ord) })
+	checkNodeOrder(errs, len(options), func(i int) iterOrdElem { return iterOrdElem{ord: options[i].Ord, node: &options[i]} })
+}
+
+func checkEnumOrder(node *EnumNode, errs *[]error) {
+	cases := node.Cases
+	slices.SortFunc(cases, func(n1, n2 CaseNode) int { return cmpOrd(n1.Ord, n2.Ord) })
+	checkNodeOrder(errs, len(cases), func(i int) iterOrdElem { return iterOrdElem{ord: cases[i].Ord, node: &cases[i]} })
+}
+
+func checkProcOrder(node *ServiceNode, errs *[]error) {
+	procs := node.Procedures
+	slices.SortFunc(procs, func(n1, n2 RpcNode) int { return cmpOrd(n1.Ord, n2.Ord) })
+	checkNodeOrder(errs, len(procs), func(i int) iterOrdElem { return iterOrdElem{ord: procs[i].Ord, node: &procs[i]} })
+}
+
+func validateTypes(nodes []Node, errs *[]error) {
+	for _, n := range nodes {
+		switch node := n.(type) {
+		case *StructNode:
+			checkFieldOrder(node, errs)
+		case *UnionNode:
+			checkUnionOrder(node, errs)
+		case *EnumNode:
+			checkEnumOrder(node, errs)
+		case *ServiceNode:
+			checkProcOrder(node, errs)
+		}
+	}
 }
 
 type PropTable = map[string]string
 
 func makePropTable(nodes []Node) PropTable {
 	propTable := make(PropTable)
-	for _, node := range nodes {
-		node, ok := node.(*PropertyNode)
-		if ok && !node.Poisoned {
-			propTable[node.Name] = node.Value
+	for _, n := range nodes {
+		node, ok := n.(*PropertyNode)
+		if !ok || node.Poisoned {
+			continue
 		}
+		propTable[node.Name] = node.Value
 	}
 	return propTable
 }
@@ -144,10 +191,6 @@ func makeCodeBuilder(propTable PropTable, errs *[]error) CodeBuilder {
 }
 
 func (b *CodeBuilder) build(n Node) {
-	if n.GetPoisoned() {
-		// ignore any ast that is poisoned, it is only left in the ast for pre-codegen validation
-		return
-	}
 	switch node := n.(type) {
 	case *StructNode:
 		b.buildStruct(node)
@@ -170,7 +213,7 @@ func (b *CodeBuilder) w(s string) {
 	b.sb.WriteString(s)
 }
 
-func (b *CodeBuilder) buildTypeRef(ref TypeRefNode) {
+func (b *CodeBuilder) buildTypeRef(ref TypeNode) {
 	for _, size := range ref.Array {
 		b.w("[")
 		if size > 0 {
@@ -182,6 +225,10 @@ func (b *CodeBuilder) buildTypeRef(ref TypeRefNode) {
 }
 
 func (b *CodeBuilder) buildStruct(strct *StructNode) {
+	if strct.Poisoned {
+		return
+	}
+
 	// build out the struct type definition
 	b.w("type ")
 	b.w(strct.Name)
@@ -196,6 +243,10 @@ func (b *CodeBuilder) buildStruct(strct *StructNode) {
 }
 
 func (b *CodeBuilder) buildUnion(union *UnionNode) {
+	if union.Poisoned {
+		return
+	}
+
 	// build out the union type definition
 	b.w("type ")
 	b.w(union.Name)
@@ -223,6 +274,10 @@ func (b *CodeBuilder) buildUnion(union *UnionNode) {
 }
 
 func (b *CodeBuilder) buildEnum(enum *EnumNode) {
+	if enum.Poisoned {
+		return
+	}
+
 	// build out the enum type definition and cases
 	b.w("type ")
 	b.w(enum.Name)
@@ -244,8 +299,10 @@ func (b *CodeBuilder) buildEnum(enum *EnumNode) {
 	// build out the enum's serialize and deserialize methods
 }
 
-func (b *CodeBuilder) buildService(node *ServiceNode) {
-
+func (b *CodeBuilder) buildService(svc *ServiceNode) {
+	if svc.Poisoned {
+		return
+	}
 }
 
 func (b *CodeBuilder) buildPackage(pack string) {
@@ -257,9 +314,8 @@ func (b *CodeBuilder) buildPackage(pack string) {
 func runCodeBuilder(program string, pack string, errs *[]error) string {
 	nodes := runParser(program, errs)
 
-	// prepare metadata tables for performing the code generation. we stop if we encounter any errors before building code
-	prepareTypeTables(nodes, nil, errs)
-	checkPreconditions(nodes, errs)
+	prepareTypes(nodes, nil, errs)
+	validateTypes(nodes, errs)
 
 	if len(*errs) > 0 {
 		return ""
@@ -267,7 +323,6 @@ func runCodeBuilder(program string, pack string, errs *[]error) string {
 
 	propTable := makePropTable(nodes)
 
-	// build the program into a string
 	builder := makeCodeBuilder(propTable, errs)
 	builder.buildPackage(pack)
 	for _, node := range nodes {

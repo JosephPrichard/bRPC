@@ -1,102 +1,165 @@
 package internal
 
 import (
+	"fmt"
 	"strings"
 )
 
 type ParserError interface {
 	error
-	addKind(NodeKind)
 	token() Token
+	addKind(kind NodeKind)
+	withKind(kind NodeKind) ParserError
 }
 
-type ParsingErr struct {
+type ParseErrKind int
+
+const (
+	ExpectErrKind ParseErrKind = iota
+	EscSeqErrKind
+	SizeErrKind
+	IdenErrKind
+	NumErrKind
+)
+
+type ParseErr struct {
 	actual   Token
-	kind     NodeKind
+	nodeKind NodeKind
 	expected []TokKind
-	text     string
+	errKind  ParseErrKind
+	escSeq   rune
 }
 
-func (err *ParsingErr) token() Token {
+func makeKindErr(actual Token, kind ParseErrKind) ParserError {
+	return &ParseErr{actual: actual, errKind: kind}
+}
+
+func makeExpectErr(actual Token, expected ...TokKind) ParserError {
+	return &ParseErr{actual: actual, expected: expected, errKind: ExpectErrKind}
+}
+
+func makeEscSeqErr(actual Token, escSeq rune) ParserError {
+	return &ParseErr{actual: actual, escSeq: escSeq, errKind: EscSeqErrKind}
+}
+
+func (err *ParseErr) token() Token {
 	return err.actual
 }
 
-func (err *ParsingErr) addKind(kind NodeKind) {
-	if err.kind == UnknownNodeKind {
-		err.kind = kind
+func (err *ParseErr) addKind(kind NodeKind) {
+	if err.nodeKind == UnknownNodeKind {
+		err.nodeKind = kind
 	}
 }
 
-func addKind(err ParserError, kind NodeKind) ParserError {
+func (err *ParseErr) withKind(kind NodeKind) ParserError {
 	err.addKind(kind)
 	return err
 }
 
-func (err *ParsingErr) Error() string {
+func (err *ParseErr) Error() string {
 	var sb strings.Builder
+
+	// header
 	sb.WriteString(err.actual.Positions.Header())
 	sb.WriteRune(' ')
 
-	sb.WriteString(err.text)
-	if len(err.expected) > 0 {
+	// text
+	switch err.errKind {
+	case ExpectErrKind:
 		sb.WriteString("expected ")
 		for i, tok := range err.expected {
-			var delim string
+			dlm := ""
 			if i == len(err.expected)-2 {
-				delim = " or "
+				dlm = " or "
 			} else if i != len(err.expected)-1 {
-				delim = ", "
+				dlm = ", "
 			}
 			sb.WriteString(tok.String())
-			sb.WriteString(delim)
+			sb.WriteString(dlm)
 		}
+	case EscSeqErrKind:
+		sb.WriteString(fmt.Sprintf("invalid escape sequence: '/%c'", err.escSeq))
+	case NumErrKind:
+		sb.WriteString(fmt.Sprintf("%s is an invalid integer", err.actual.String()))
+	case SizeErrKind:
+		sb.WriteString("struct does not allow a size argument")
+	case IdenErrKind:
+		sb.WriteString("iden must begin with an uppercase and only contain alphanumerics")
+	default:
+		panic(fmt.Sprintf("assertion errror: unknown parse errKind: %d", err.errKind))
 	}
 
+	// actual
 	sb.WriteString(", found ")
 	sb.WriteString(err.actual.String())
-	if err.kind != UnknownNodeKind {
+
+	// node
+	if err.nodeKind != UnknownNodeKind {
 		sb.WriteString(" while parsing ")
-		sb.WriteString(err.kind.String())
+		sb.WriteString(err.nodeKind.String())
 	}
 
-	var postfix string
+	// expected
 	switch err.actual.Expected {
 	case TokOrd:
-		postfix = ": an ord must contain an '@' followed by an integer"
+		sb.WriteString(": an ord must contain an '@' followed by an integer")
 	case TokInteger:
-		postfix = ": an integer must only contain numeric characters"
+		sb.WriteString(": an integer must only contain numeric characters")
 	default:
-		// no messages for other expected tokens
 	}
-	sb.WriteString(postfix)
 
 	return sb.String()
 }
 
-func makeTextErr(actual Token, text string) ParserError {
-	return &ParsingErr{actual: actual, text: text}
-}
+type CodegenErrKind int
 
-func makeExpectErr(actual Token, expected ...TokKind) ParserError {
-	return &ParsingErr{actual: actual, expected: expected}
-}
+const (
+	RedefinedErrKind CodegenErrKind = iota
+	FirstOrdErrKind
+	OrdErrKind
+)
 
 type CodegenErr struct {
-	node Node
-	msg  string
+	kind   CodegenErrKind
+	node   Node
+	iden   string
+	expOrd uint64
+	gotOrd uint64
+}
+
+func makeRedefinedErr(node Node, iden string) error {
+	return &CodegenErr{node: node, iden: iden, kind: RedefinedErrKind}
+}
+
+func makeFirstOrdErr(node Node) error {
+	return &CodegenErr{node: node, kind: FirstOrdErrKind}
+}
+
+func makeOrdErr(node Node, expOrd uint64, gotOrd uint64) error {
+	return &CodegenErr{node: node, kind: OrdErrKind, expOrd: expOrd, gotOrd: gotOrd}
 }
 
 func (err *CodegenErr) Error() string {
-	return err.node.Header() + err.msg + " while inside " + err.node.Kind().String()
+	var sb strings.Builder
+	sb.WriteString(err.node.Header())
+
+	switch err.kind {
+	case RedefinedErrKind:
+		sb.WriteString(fmt.Sprintf("\"%s\" is redefined", err.iden))
+	case FirstOrdErrKind:
+		sb.WriteString(fmt.Sprintf("%s first ord must be '1'", err.node.Kind().String()))
+	case OrdErrKind:
+		sb.WriteString(fmt.Sprintf("%s ord '%d' should be '%d'", err.node.Kind().String(), err.gotOrd, err.expOrd))
+	}
+
+	sb.WriteString(" while inside ")
+	sb.WriteString(err.node.Kind().String())
+	return sb.String()
 }
 
 func printErrors(errs []error, filePath string, printLine func(string)) {
 	for _, err := range errs {
-		var sb strings.Builder
-
-		sb.WriteString(filePath + ":")
-		sb.WriteString(err.Error())
-
-		printLine(sb.String())
+		printLine(fmt.Sprintf("%s:%s", filePath, err.Error()))
 	}
 }

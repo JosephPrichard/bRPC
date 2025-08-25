@@ -17,15 +17,15 @@ func TestParser_Properties(t *testing.T) {
 
 	var errs []error
 	nodes := runParser(input, &errs)
-	WalkMetaList(Node.ClearPos, nodes)
+	ClearAll(nodes)
 
-	expectednodes := []Node{
+	expectedNodes := []Node{
 		&ImportNode{Path: "/services/schemas/animals"},
 		&PropertyNode{Name: "package", Value: "/hello/\\\"world\""},
 		&PropertyNode{Name: "constant", Value: "Value"},
 	}
 
-	assert.Equal(t, expectednodes, nodes)
+	assert.Equal(t, expectedNodes, nodes)
 	assert.Nil(t, errs)
 }
 
@@ -40,7 +40,7 @@ func TestParser_Struct(t *testing.T) {
 		message Data2 struct {
 			required one @1 Data3;
 	
-			message Data3 struct(A B) {
+			message Data3 struct(A, B) {
 				deprecated one @1 A;;;
 				required two @2 B;
 			}
@@ -49,45 +49,45 @@ func TestParser_Struct(t *testing.T) {
 	`
 	var errs []error
 	nodes := runParser(input, &errs)
-	WalkMetaList(Node.ClearPos, nodes)
+	ClearAll(nodes)
 
-	expectednodes := []Node{
+	expectedNodes := []Node{
 		&StructNode{
 			Name: "Data1",
 			Fields: []FieldNode{
-				{Modifier: Required, Name: "one", Ord: 1, Type: TypeRefNode{Iden: "b128"}},
+				{Modifier: Required, Name: "one", Ord: 1, Type: TypeNode{TypeVal: TypeVal{Iden: "b128"}}},
 				{
 					Modifier: Required,
 					Name:     "two",
 					Ord:      2,
-					Type:     TypeRefNode{Iden: "b5", Array: []uint64{0}},
+					Type:     TypeNode{TypeVal: TypeVal{Iden: "b5"}, Array: []uint64{0}},
 				},
 				{
 					Modifier: Optional,
 					Name:     "three",
 					Ord:      3,
-					Type:     TypeRefNode{Iden: "b4", Array: []uint64{16}},
+					Type:     TypeNode{TypeVal: TypeVal{Iden: "b4"}, Array: []uint64{16}},
 				},
 				{
 					Modifier: Optional,
 					Name:     "four",
 					Ord:      4,
-					Type:     TypeRefNode{Iden: "b4", Array: []uint64{0, 4, 0}},
+					Type:     TypeNode{TypeVal: TypeVal{Iden: "b4"}, Array: []uint64{0, 4, 0}},
 				},
 			},
 			LocalDefs: []Node{
 				&StructNode{
 					Name: "Data2",
 					Fields: []FieldNode{
-						{Modifier: Required, Name: "one", Ord: 1, Type: TypeRefNode{Iden: "Data3"}},
+						{Modifier: Required, Name: "one", Ord: 1, Type: TypeNode{TypeVal: TypeVal{Iden: "Data3"}}},
 					},
 					LocalDefs: []Node{
 						&StructNode{
 							Name:       "Data3",
 							TypeParams: []string{"A", "B"},
 							Fields: []FieldNode{
-								{Modifier: Deprecated, Name: "one", Ord: 1, Type: TypeRefNode{Iden: "A"}},
-								{Modifier: Required, Name: "two", Ord: 2, Type: TypeRefNode{Iden: "B"}},
+								{Modifier: Deprecated, Name: "one", Ord: 1, Type: TypeNode{TypeVal: TypeVal{Iden: "A"}}},
+								{Modifier: Required, Name: "two", Ord: 2, Type: TypeNode{TypeVal: TypeVal{Iden: "B"}}},
 							},
 						},
 					},
@@ -96,8 +96,8 @@ func TestParser_Struct(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, expectednodes, nodes)
-	assert.Nil(t, errs)
+	assert.Equal(t, expectedNodes, nodes)
+	assert.Empty(t, errs)
 }
 
 func TestParser_Enum(t *testing.T) {
@@ -110,9 +110,9 @@ func TestParser_Enum(t *testing.T) {
 	`
 	var errs []error
 	nodes := runParser(input, &errs)
-	WalkMetaList(Node.ClearPos, nodes)
+	ClearAll(nodes)
 
-	expectednodes := []Node{
+	expectedNodes := []Node{
 		&EnumNode{
 			Name: "Data1",
 			Size: 16,
@@ -124,15 +124,15 @@ func TestParser_Enum(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, expectednodes, nodes)
+	assert.Equal(t, expectedNodes, nodes)
 	assert.Nil(t, errs)
 }
 
 func TestParser_Union(t *testing.T) {
 	input := `
-	message Data [8]union(A B C) {
-		@1 Data2(Data);
-		@2 []Data1;
+	message Data [8]union(A, B, C) {
+		@1 Data2;
+		@2 Data1;
 		@3 Data;
 
 		message Data union() { 
@@ -143,41 +143,32 @@ func TestParser_Union(t *testing.T) {
 	`
 	var errs []error
 	nodes := runParser(input, &errs)
-	WalkMetaList(Node.ClearPos, nodes)
+	ClearAll(nodes)
 
-	expectednodes := []Node{
+	expectedNodes := []Node{
 		&UnionNode{
 			Name:       "Data",
 			Size:       8,
 			TypeParams: []string{"A", "B", "C"},
 			Options: []OptionNode{
-				{
-					Ord: 1,
-					Type: TypeRefNode{
-						Iden:     "Data2",
-						TypeArgs: []TypeRefNode{{Iden: "Data"}},
-					},
-				},
-				{
-					Ord:  2,
-					Type: TypeRefNode{Iden: "Data1", Array: []uint64{0}},
-				},
-				{Ord: 3, Type: TypeRefNode{Iden: "Data"}},
+				{Ord: 1, Type: TypeVal{Iden: "Data2"}},
+				{Ord: 2, Type: TypeVal{Iden: "Data1"}},
+				{Ord: 3, Type: TypeVal{Iden: "Data"}},
 			},
 			LocalDefs: []Node{
 				&UnionNode{
 					Name: "Data",
 					Size: 16,
 					Options: []OptionNode{
-						{Ord: 1, Type: TypeRefNode{Iden: "B"}},
-						{Ord: 2, Type: TypeRefNode{Iden: "C"}},
+						{Ord: 1, Type: TypeVal{Iden: "B"}},
+						{Ord: 2, Type: TypeVal{Iden: "C"}},
 					},
 				},
 			},
 		},
 	}
 
-	assert.Equal(t, expectednodes, nodes)
+	assert.Equal(t, expectedNodes, nodes)
 	assert.Nil(t, errs)
 }
 
@@ -185,7 +176,7 @@ func TestParser_Service(t *testing.T) {
 	input := `
 	service ServiceA {
 		rpc @1 Hello(Test) returns (Output)
-		rpc @2 World(Test1(Arg1 Arg2 Arg3)) returns (Output1(Arg1 Arg2))
+		rpc @2 World(Test1(Arg1, Arg2, Arg3)) returns (Output1(Arg1, Arg2))
 
 		message Test struct {
 			required one @1 b24;
@@ -194,23 +185,28 @@ func TestParser_Service(t *testing.T) {
 	`
 	var errs []error
 	nodes := runParser(input, &errs)
-	WalkMetaList(Node.ClearPos, nodes)
+	ClearAll(nodes)
 
-	expectednodes := []Node{
+	expectedNodes := []Node{
 		&ServiceNode{
 			Name: "ServiceA",
 			Procedures: []RpcNode{
-				{Ord: 1, Name: "Hello", Arg: TypeRefNode{Iden: "Test"}, Ret: TypeRefNode{Iden: "Output"}},
+				{
+					Ord:  1,
+					Name: "Hello",
+					Arg:  TypeNode{TypeVal: TypeVal{Iden: "Test"}},
+					Ret:  TypeNode{TypeVal: TypeVal{Iden: "Output"}},
+				},
 				{
 					Ord:  2,
 					Name: "World",
-					Arg: TypeRefNode{
-						Iden:     "Test1",
-						TypeArgs: []TypeRefNode{{Iden: "Arg1"}, {Iden: "Arg2"}, {Iden: "Arg3"}},
+					Arg: TypeNode{
+						TypeVal:  TypeVal{Iden: "Test1"},
+						TypeArgs: []TypeNode{{TypeVal: TypeVal{Iden: "Arg1"}}, {TypeVal: TypeVal{Iden: "Arg2"}}, {TypeVal: TypeVal{Iden: "Arg3"}}},
 					},
-					Ret: TypeRefNode{
-						Iden:     "Output1",
-						TypeArgs: []TypeRefNode{{Iden: "Arg1"}, {Iden: "Arg2"}},
+					Ret: TypeNode{
+						TypeVal:  TypeVal{Iden: "Output1"},
+						TypeArgs: []TypeNode{{TypeVal: TypeVal{Iden: "Arg1"}}, {TypeVal: TypeVal{Iden: "Arg2"}}},
 					},
 				},
 			},
@@ -218,14 +214,14 @@ func TestParser_Service(t *testing.T) {
 				&StructNode{
 					Name: "Test",
 					Fields: []FieldNode{
-						{Modifier: Required, Name: "one", Ord: 1, Type: TypeRefNode{Iden: "b24"}},
+						{Modifier: Required, Name: "one", Ord: 1, Type: TypeNode{TypeVal: TypeVal{Iden: "b24"}}},
 					},
 				},
 			},
 		},
 	}
 
-	assert.Equal(t, expectednodes, nodes)
+	assert.Equal(t, expectedNodes, nodes)
 	assert.Nil(t, errs)
 }
 
@@ -246,17 +242,17 @@ func TestParser_Errors(t *testing.T) {
 			`,
 			nodes: []Node{
 				&StructNode{
-					Tags: Tags{Poisoned: true},
-					Name: "Data1",
+					Poisoned: true,
+					Name:     "Data1",
 					Fields: []FieldNode{
-						{Modifier: Required, Name: "one", Ord: 1, Type: TypeRefNode{Iden: "b128"}},
+						{Modifier: Required, Name: "one", Ord: 1, Type: TypeNode{TypeVal: TypeVal{Iden: "b128"}}},
 					},
 				},
 			},
 			errs: []error{
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokEof, Value: ""}, Positions{B: 56, E: 56}},
-					kind:     StructNodeKind,
+					nodeKind: StructNodeKind,
 					expected: []TokKind{TokField, TokMessage, TokRBrace},
 				},
 			},
@@ -270,24 +266,24 @@ func TestParser_Errors(t *testing.T) {
 			`,
 			nodes: []Node{
 				&StructNode{
-					Tags: Tags{Poisoned: true},
-					Name: "Data1",
+					Poisoned: true,
+					Name:     "Data1",
 					LocalDefs: []Node{
 						&UnionNode{
-							Tags: Tags{Poisoned: true},
-							Size: 16,
-							Name: "Data2",
+							Poisoned: true,
+							Size:     16,
+							Name:     "Data2",
 							LocalDefs: []Node{
-								&StructNode{Tags: Tags{Poisoned: true}, Name: "Data3"},
+								&StructNode{Poisoned: true, Name: "Data3"},
 							},
 						},
 					},
 				},
 			},
 			errs: []error{
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokEof, Value: ""}, Positions{B: 84, E: 84}},
-					kind:     StructNodeKind,
+					nodeKind: StructNodeKind,
 					expected: []TokKind{TokField, TokMessage, TokRBrace},
 				},
 			},
@@ -302,15 +298,15 @@ func TestParser_Errors(t *testing.T) {
 				&StructNode{
 					Name: "Data",
 					Fields: []FieldNode{
-						{Modifier: Required, Name: "one", Ord: 1, Type: TypeRefNode{Iden: "b128"}},
+						{Modifier: Required, Name: "one", Ord: 1, Type: TypeNode{TypeVal: TypeVal{Iden: "b128"}}},
 					},
 				},
 			},
 			errs: []error{
-				&ParsingErr{
-					actual: Token{TokVal{Kind: TokInteger, Value: "5"}, Positions{B: 18, E: 19}},
-					kind:   MessageNodeKind,
-					text:   "struct does not allow a size argument",
+				&ParseErr{
+					actual:   Token{TokVal{Kind: TokInteger, Value: "5"}, Positions{B: 18, E: 19}},
+					nodeKind: MessageNodeKind,
+					errKind:  SizeErrKind,
 				},
 			},
 		},
@@ -327,27 +323,27 @@ func TestParser_Errors(t *testing.T) {
 				&StructNode{
 					Name: "Data",
 					Fields: []FieldNode{
-						{Tags: Tags{Poisoned: true}, Modifier: Required, Name: "one", Ord: 1},
+						{Poisoned: true, Modifier: Required, Name: "one", Ord: 1},
 					},
 				},
 				&StructNode{
-					Name: "Data_1",
-					Tags: Tags{Poisoned: true},
+					Name:     "Data_1",
+					Poisoned: true,
 					Fields: []FieldNode{
-						{Modifier: Required, Name: "one", Ord: 1, Type: TypeRefNode{Iden: "b128"}},
+						{Modifier: Required, Name: "one", Ord: 1, Type: TypeNode{TypeVal: TypeVal{Iden: "b128"}}},
 					},
 				},
 			},
 			errs: []error{
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokErr, Value: "5a", Expected: TokInteger}, Positions{B: 47, E: 49}},
-					kind:     TypeRefNodeKind,
+					nodeKind: TypeNodeKind,
 					expected: []TokKind{TokInteger, TokRBrack},
 				},
-				&ParsingErr{
-					actual: Token{TokVal{Kind: TokIden, Value: "Data_1"}, Positions{B: 72, E: 78}},
-					kind:   MessageNodeKind,
-					text:   "iden must only contain alphanumeric characters",
+				&ParseErr{
+					actual:   Token{TokVal{Kind: TokIden, Value: "Data_1"}, Positions{B: 72, E: 78}},
+					nodeKind: MessageNodeKind,
+					errKind:  IdenErrKind,
 				},
 			},
 		},
@@ -364,35 +360,35 @@ func TestParser_Errors(t *testing.T) {
 			}`,
 			nodes: []Node{
 				&StructNode{
-					Tags: Tags{Poisoned: true},
-					Name: "Data1",
+					Poisoned: true,
+					Name:     "Data1",
 					Fields: []FieldNode{
-						{Tags: Tags{Poisoned: true}, Modifier: Required, Name: "one"},
+						{Poisoned: true, Modifier: Required, Name: "one"},
 					},
 					LocalDefs: []Node{
 						&StructNode{
 							Name: "Data2",
 							Fields: []FieldNode{
-								{Tags: Tags{Poisoned: true}, Modifier: Required, Name: "one", Ord: 1},
+								{Poisoned: true, Modifier: Required, Name: "one", Ord: 1},
 							},
 						},
 					},
 				},
 			},
 			errs: []error{
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokErr, Value: "@1abc", Expected: TokOrd}, Positions{B: 44, E: 49}},
-					kind:     FieldNodeKind,
+					nodeKind: FieldNodeKind,
 					expected: []TokKind{TokOrd},
 				},
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokIden, Value: "two"}, Positions{B: 60, E: 63}},
-					kind:     StructNodeKind,
+					nodeKind: StructNodeKind,
 					expected: []TokKind{TokField, TokMessage, TokRBrace},
 				},
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokSemicolon, Value: ";"}, Positions{B: 126, E: 127}},
-					kind:     FieldNodeKind,
+					nodeKind: FieldNodeKind,
 					expected: []TokKind{TokTypeRef},
 				},
 			},
@@ -413,35 +409,35 @@ func TestParser_Errors(t *testing.T) {
 				&StructNode{
 					Name: "Data3",
 					Fields: []FieldNode{
-						{Tags: Tags{Poisoned: true}, Modifier: Required, Name: "one", Ord: 1},
+						{Poisoned: true, Modifier: Required, Name: "one", Ord: 1},
 					},
 					LocalDefs: []Node{
 						&UnionNode{
-							Tags: Tags{Poisoned: true},
-							Name: "Data4",
-							Size: 16,
+							Poisoned: true,
+							Name:     "Data4",
+							Size:     16,
 							Options: []OptionNode{
-								{Type: TypeRefNode{Iden: "One"}, Ord: 1},
-								{Tags: Tags{Poisoned: true}, Ord: 2},
+								{Type: TypeVal{Iden: "One"}, Ord: 1},
+								{Poisoned: true, Ord: 2},
 							},
 						},
 					},
 				},
 			},
 			errs: []error{
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokSemicolon, Value: ";"}, Positions{B: 46, E: 47}},
-					kind:     FieldNodeKind,
+					nodeKind: FieldNodeKind,
 					expected: []TokKind{TokTypeRef},
 				},
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokInteger, Value: "5"}, Positions{B: 98, E: 99}},
-					kind:     OptionNodeKind,
-					expected: []TokKind{TokTypeRef},
+					nodeKind: OptionNodeKind,
+					expected: []TokKind{TokIden},
 				},
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokIden, Value: "Two"}, Positions{B: 106, E: 109}},
-					kind:     UnionNodeKind,
+					nodeKind: UnionNodeKind,
 					expected: []TokKind{TokOption, TokMessage, TokRBrace},
 				},
 			},
@@ -456,24 +452,24 @@ func TestParser_Errors(t *testing.T) {
 			}`,
 			nodes: []Node{
 				&EnumNode{
-					Tags: Tags{Poisoned: true},
-					Name: "Data4",
-					Size: 4,
+					Poisoned: true,
+					Name:     "Data4",
+					Size:     4,
 					Cases: []CaseNode{
 						{Name: "ONE", Ord: 1},
-						{Tags: Tags{Poisoned: true}, Ord: 2},
+						{Poisoned: true, Ord: 2},
 					},
 				},
 			},
 			errs: []error{
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokInteger, Value: "2"}, Positions{B: 47, E: 48}},
-					kind:     CaseNodeKind,
+					nodeKind: CaseNodeKind,
 					expected: []TokKind{TokIden},
 				},
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokIden, Value: "THREE"}, Positions{B: 58, E: 63}},
-					kind:     EnumNodeKind,
+					nodeKind: EnumNodeKind,
 					expected: []TokKind{TokCase, TokRBrace},
 				},
 			},
@@ -488,28 +484,28 @@ func TestParser_Errors(t *testing.T) {
 			}`,
 			nodes: []Node{
 				&StructNode{
-					Tags: Tags{Poisoned: true},
-					Name: "Data",
+					Poisoned: true,
+					Name:     "Data",
 					Fields: []FieldNode{
-						{Tags: Tags{Poisoned: true}, Modifier: Required, Name: "one"},
-						{Tags: Tags{Poisoned: true}, Modifier: Required, Name: "three", Ord: 3, Type: TypeRefNode{Iden: "b128"}},
+						{Poisoned: true, Modifier: Required, Name: "one"},
+						{Poisoned: true, Modifier: Required, Name: "three", Ord: 3, Type: TypeNode{TypeVal: TypeVal{Iden: "b128"}}},
 					},
 				},
 			},
 			errs: []error{
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokIden, Value: "one"}, Positions{B: 43, E: 46}},
-					kind:     FieldNodeKind,
+					nodeKind: FieldNodeKind,
 					expected: []TokKind{TokOrd},
 				},
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokIden, Value: "two"}, Positions{B: 72, E: 75}},
-					kind:     StructNodeKind,
+					nodeKind: StructNodeKind,
 					expected: []TokKind{TokField, TokMessage, TokRBrace},
 				},
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokRBrace, Value: "}"}, Positions{B: 131, E: 132}},
-					kind:     FieldNodeKind,
+					nodeKind: FieldNodeKind,
 					expected: []TokKind{TokSemicolon},
 				},
 			},
@@ -524,28 +520,28 @@ func TestParser_Errors(t *testing.T) {
 			}`,
 			nodes: []Node{
 				&ServiceNode{
-					Tags: Tags{Poisoned: true},
-					Name: "Data",
+					Poisoned: true,
+					Name:     "Data",
 					Procedures: []RpcNode{
-						{Tags: Tags{Poisoned: true}, Name: "Hello", Ord: 1, Arg: TypeRefNode{Iden: "Test"}},
-						{Tags: Tags{Poisoned: true}, Name: "World", Ord: 2, Arg: TypeRefNode{Iden: "Test1"}},
+						{Poisoned: true, Name: "Hello", Ord: 1, Arg: TypeNode{TypeVal: TypeVal{Iden: "Test"}}},
+						{Poisoned: true, Name: "World", Ord: 2, Arg: TypeNode{TypeVal: TypeVal{Iden: "Test1"}}},
 					},
 				},
 			},
 			errs: []error{
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokLParen, Value: "("}, Positions{B: 42, E: 43}},
-					kind:     RpcNodeKind,
+					nodeKind: RpcNodeKind,
 					expected: []TokKind{TokReturns},
 				},
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokRequired, Value: "required"}, Positions{B: 55, E: 63}},
-					kind:     ServiceNodeKind,
+					nodeKind: ServiceNodeKind,
 					expected: []TokKind{TokRpc, TokMessage, TokRBrace},
 				},
-				&ParsingErr{
+				&ParseErr{
 					actual:   Token{TokVal{Kind: TokRParen, Value: ")"}, Positions{B: 110, E: 111}},
-					kind:     RpcNodeKind,
+					nodeKind: RpcNodeKind,
 					expected: []TokKind{TokTypeRef},
 				},
 			},
@@ -556,7 +552,7 @@ func TestParser_Errors(t *testing.T) {
 		t.Run(fmt.Sprintf("test/%s", test.name), func(t *testing.T) {
 			var errs []error
 			nodes := runParser(test.input, &errs)
-			WalkMetaList(Node.ClearPos, nodes)
+			WalkMetaList(Node.Clear, nodes)
 
 			printLine := func(err string) {
 				t.Log(err)
