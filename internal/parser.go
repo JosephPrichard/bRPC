@@ -346,28 +346,30 @@ func (p *Parser) parseMessage() (Node, ParserError) {
 func (p *Parser) parseTypeParams() ([]string, ParserError) {
 	var typeParams []string
 
-	token := p.next()
-	switch token.Kind {
-	case TokLBrace:
-	case TokLParen:
-		for parsing := true; parsing; {
-			token := p.next()
-			switch token.Kind {
-			case TokRParen:
-				parsing = false
-			case TokIden:
-				typeParams = append(typeParams, token.Value)
-			default:
-				return nil, makeExpectErr(token, TokRParen, TokIden)
-			}
+	if p.peek().Kind != TokLParen {
+		return typeParams, nil
+	}
+	p.eat()
+
+	for {
+		if p.peek().Kind == TokRParen {
+			break
 		}
-		if _, err := p.expect(TokLBrace); err != nil {
+		token, err := p.expect(TokIden)
+		if err != nil {
 			return nil, err
 		}
-	default:
-		return nil, makeExpectErr(token, TokLBrace, TokLParen)
+		typeParams = append(typeParams, token.Value)
+
+		if p.peek().Kind != TokComma {
+			break
+		}
+		p.eat()
 	}
 
+	if _, err := p.expect(TokRParen); err != nil {
+		return nil, err
+	}
 	return typeParams, nil
 }
 
@@ -389,12 +391,17 @@ func (p *Parser) parseStruct(name string, nameOk bool) Node {
 	}
 	strct.B = token.B
 
-	typeArgs, err := p.parseTypeParams()
+	typeParams, err := p.parseTypeParams()
 	if err != nil {
 		forwardErr(err)
 		return &strct
 	}
-	strct.TypeParams = typeArgs
+	strct.TypeParams = typeParams
+
+	if _, err := p.expect(TokLBrace); err != nil {
+		forwardErr(err)
+		return &strct
+	}
 
 	for {
 		token := p.next()
@@ -422,16 +429,16 @@ func (p *Parser) parseStruct(name string, nameOk bool) Node {
 	}
 }
 
-func (p *Parser) parseOption() OptionNode {
+func (p *Parser) parseOption() *OptionNode {
 	var option OptionNode
 
-	forwardErr := func(err ParserError) OptionNode {
+	forwardErr := func(err ParserError) *OptionNode {
 		option.E = err.token().E
 		option.Poisoned = true
 		err.addKind(OptionNodeKind)
 		p.skipUntilSentinel()
 		p.emitError(err)
-		return option
+		return &option
 	}
 
 	var token Token
@@ -447,13 +454,13 @@ func (p *Parser) parseOption() OptionNode {
 	if err != nil {
 		return forwardErr(err)
 	}
-	option.Type = TypeVal{Iden: token.Value}
+	option.Iden = token.Value
 
 	if firstToken, ok := p.eatWhile(TokSemicolon); !ok {
 		return forwardErr(makeExpectErr(firstToken, TokSemicolon))
 	}
 
-	return option
+	return &option
 }
 
 func (p *Parser) parseUnion(name string, nameOk bool, size uint64) Node {
@@ -474,12 +481,17 @@ func (p *Parser) parseUnion(name string, nameOk bool, size uint64) Node {
 	}
 	union.B = token.B
 
-	typeArgs, err := p.parseTypeParams()
+	typeParams, err := p.parseTypeParams()
 	if err != nil {
 		forwardErr(err)
 		return &union
 	}
-	union.TypeParams = typeArgs
+	union.TypeParams = typeParams
+
+	if _, err := p.expect(TokLBrace); err != nil {
+		forwardErr(err)
+		return &union
+	}
 
 	for {
 		token := p.next()
@@ -519,15 +531,15 @@ func (p *Parser) parseNumeric() (int64, ParserError) {
 	return value, nil
 }
 
-func (p *Parser) parseCase() CaseNode {
+func (p *Parser) parseCase() *CaseNode {
 	var ec CaseNode
 
-	forwardErr := func(err ParserError) CaseNode {
+	forwardErr := func(err ParserError) *CaseNode {
 		ec.Poisoned = true
 		err.addKind(CaseNodeKind)
 		p.skipUntilSentinel()
 		p.emitError(err)
-		return ec
+		return &ec
 	}
 
 	ord, err := p.parseOrd()
@@ -545,7 +557,7 @@ func (p *Parser) parseCase() CaseNode {
 	if firstToken, ok := p.eatWhile(TokSemicolon); !ok {
 		return forwardErr(makeExpectErr(firstToken, TokSemicolon))
 	}
-	return ec
+	return &ec
 }
 
 func (p *Parser) parseEnum(name string, nameOk bool, size uint64) Node {
@@ -618,15 +630,26 @@ func (p *Parser) parseTypeArgs(token *Token) ([]TypeNode, ParserError) {
 
 	for {
 		if p.peek().Kind == TokRParen {
-			*token = p.next()
-			return typeArgs, nil
+			break
 		}
 		typ, err := p.parseType()
 		if err != nil {
 			return nil, err
 		}
 		typeArgs = append(typeArgs, typ)
+
+		if p.peek().Kind != TokComma {
+			break
+		}
+		p.eat()
 	}
+
+	if _, err := p.expect(TokRParen); err != nil {
+		*token = p.next()
+		return nil, err
+	}
+
+	return typeArgs, nil
 }
 
 func (p *Parser) parseType() (TypeNode, ParserError) {
@@ -668,7 +691,7 @@ func (p *Parser) parseType() (TypeNode, ParserError) {
 				return forwardErr(err)
 			}
 			node := TypeNode{
-				TypeVal:   TypeVal{Iden: iden},
+				Iden:      iden,
 				Array:     array,
 				TypeArgs:  typeArgs,
 				Positions: Positions{B: tokenB.B, E: tokenE.E},
@@ -702,16 +725,16 @@ func (p *Parser) parseOrdWithToken(token *Token) (uint64, ParserError) {
 	return ord, nil
 }
 
-func (p *Parser) parseField() FieldNode {
+func (p *Parser) parseField() *FieldNode {
 	var field FieldNode
 
-	forwardErr := func(err ParserError) FieldNode {
+	forwardErr := func(err ParserError) *FieldNode {
 		field.E = err.token().E
 		field.Poisoned = true
 		err.addKind(FieldNodeKind)
 		p.skipUntilSentinel()
 		p.emitError(err)
-		return field
+		return &field
 	}
 
 	var token Token
@@ -754,7 +777,7 @@ func (p *Parser) parseField() FieldNode {
 	}
 	field.E = firstToken.E
 
-	return field
+	return &field
 }
 
 func (p *Parser) parseService() Node {
@@ -809,16 +832,16 @@ func (p *Parser) parseService() Node {
 	}
 }
 
-func (p *Parser) parseRpc() RpcNode {
+func (p *Parser) parseRpc() *RpcNode {
 	var rpc RpcNode
 
-	forwardErr := func(err ParserError) RpcNode {
+	forwardErr := func(err ParserError) *RpcNode {
 		rpc.E = err.token().E
 		rpc.Poisoned = true
 		err.addKind(RpcNodeKind)
 		p.skipUntilSentinel()
 		p.emitError(err)
-		return rpc
+		return &rpc
 	}
 
 	token, err := p.expect(TokRpc)
@@ -864,5 +887,5 @@ func (p *Parser) parseRpc() RpcNode {
 	}
 	rpc.E = token.E
 
-	return rpc
+	return &rpc
 }

@@ -132,7 +132,7 @@ func makeRedefinedErr(node Node, iden string) error {
 	return &CodegenErr{node: node, iden: iden, kind: RedefinedErrKind}
 }
 
-func makeFirstOrdErr(node Node) error {
+func makeFstOrdErr(node Node) error {
 	return &CodegenErr{node: node, kind: FirstOrdErrKind}
 }
 
@@ -161,5 +161,13 @@ func (err *CodegenErr) Error() string {
 func printErrors(errs []error, filePath string, printLine func(string)) {
 	for _, err := range errs {
 		printLine(fmt.Sprintf("%s:%s", filePath, err.Error()))
+	}
+}
+
+func clearErrors(errs []error) {
+	for _, err := range errs {
+		if pErr, ok := err.(*ParseErr); ok {
+			pErr.actual.Positions = Positions{}
+		}
 	}
 }

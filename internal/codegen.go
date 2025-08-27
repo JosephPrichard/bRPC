@@ -7,7 +7,32 @@ import (
 	"strings"
 )
 
-// TypeTable is used to look up the node that an identifier may resolve to at any level in the node
+type PropTable = map[string]string
+
+type ImportTable = map[string]Node
+
+type CodeBuilder struct {
+	sb          strings.Builder
+	propTable   PropTable
+	importTable ImportTable
+	errs        *[]error
+}
+
+func makeCodeBuilder(errs *[]error) CodeBuilder {
+	return CodeBuilder{errs: errs}
+}
+
+func (b *CodeBuilder) buildPropTable(nodes []Node) {
+	b.propTable = make(PropTable)
+	for _, n := range nodes {
+		node, ok := n.(*PropertyNode)
+		if !ok || node.Poisoned {
+			continue
+		}
+		b.propTable[node.Name] = node.Value
+	}
+}
+
 type TypeTable struct {
 	prev *TypeTable
 	m    map[string]Node
@@ -25,12 +50,15 @@ func (t *TypeTable) getNode(iden string) Node {
 	return nil
 }
 
-func prepareTypes(nodes []Node, prev *TypeTable, errs *[]error) {
+func (b *CodeBuilder) prepareTypes(nodes []Node, prev *TypeTable) {
 	table := &TypeTable{m: make(map[string]Node), prev: prev}
 
 	insertTable := func(iden string, node Node) {
-		if _, exists := table.m[iden]; exists {
-			*errs = append(*errs, makeRedefinedErr(node, iden))
+		_, exists := table.m[iden]
+		if exists {
+			err := makeRedefinedErr(node, iden)
+			*b.errs = append(*b.errs, err)
+			return
 		}
 		table.m[iden] = node
 	}
@@ -38,78 +66,43 @@ func prepareTypes(nodes []Node, prev *TypeTable, errs *[]error) {
 	for _, n := range nodes {
 		switch node := n.(type) {
 		case *StructNode:
-			node.Table = table
-			for i := range node.Fields {
-				convertTypeNode(&node.Fields[i].Type)
+			for _, field := range node.Fields {
+				field.Type.RType = makeRType(field.Type.Iden)
 			}
+			node.Table = table
 			insertTable(node.Name, node)
-			prepareTypes(node.LocalDefs, table, errs)
+			b.prepareTypes(node.LocalDefs, table)
 		case *UnionNode:
-			node.Table = table
-			for i := range node.Options {
-				option := &node.Options[i]
-				option.Type = convertType(option.Type)
+			for _, option := range node.Options {
+				option.RType = makeRType(option.Iden)
 			}
+			node.Table = table
 			insertTable(node.Name, node)
-			prepareTypes(node.LocalDefs, table, errs)
+			b.prepareTypes(node.LocalDefs, table)
 		case *EnumNode:
 			node.Table = table
 			insertTable(node.Name, node)
 		case *ServiceNode:
-			node.Table = table
-			for i := range node.Procedures {
-				proc := &node.Procedures[i]
-				convertTypeNode(&proc.Arg)
-				convertTypeNode(&proc.Ret)
+			for _, rpc := range node.Procedures {
+				rpc.Arg.RType = makeRType(rpc.Arg.Iden)
+				rpc.Ret.RType = makeRType(rpc.Ret.Iden)
 			}
+			node.Table = table
 			insertTable(node.Name, node)
-			prepareTypes(node.LocalDefs, table, errs)
+			b.prepareTypes(node.LocalDefs, table)
 		}
 	}
 }
 
-var IntSizes = []int{8, 16, 32, 64}
-
-func convertTypeNode(node *TypeNode) {
-	node.TypeVal = convertType(node.TypeVal)
-}
-
-func convertType(t TypeVal) TypeVal {
-	// attempt to convert to a primitive first, otherwise keep the type as itself
-	index := strings.Index(t.Iden, "int")
-	if index < 0 {
-		return t
-	}
-	bitsStr := t.Iden[index+2:]
-	bits, err := strconv.Atoi(bitsStr)
-	if err != nil {
-		return t
-	}
-
-	// map to a fix sized primitive, or a big integer if that is not possible (>= 64 bits)
-	for _, size := range IntSizes {
-		if bits <= size {
-			iden := fmt.Sprintf("int%d", size)
-			return TypeVal{Iden: iden, Primitive: true}
-		}
-	}
-	return TypeVal{Iden: "big.Int", Primitive: true}
-}
-
-type iterOrdElem struct {
-	ord  uint64
-	node Node
-}
-
-func checkNodeOrder(errs *[]error, count int, elemAt func(int) iterOrdElem) {
+func checkNodeOrder[N Node](nodes []N, errs *[]error) {
 	prev := uint64(0)
-	for i := range count {
-		e := elemAt(i)
+	for i, node := range nodes {
+		ord := node.Order()
 		var err error
-		if i == 0 && e.ord != 1 {
-			err = makeFirstOrdErr(e.node)
-		} else if e.ord != prev+1 {
-			err = makeOrdErr(e.node, e.ord, prev+1)
+		if i == 0 && ord != 1 {
+			err = makeFstOrdErr(node)
+		} else if ord != prev+1 {
+			err = makeOrdErr(node, ord, prev+1)
 		}
 		if err != nil {
 			*errs = append(*errs, err)
@@ -119,75 +112,23 @@ func checkNodeOrder(errs *[]error, count int, elemAt func(int) iterOrdElem) {
 	}
 }
 
-func checkFieldOrder(node *StructNode, errs *[]error) {
-	fields := node.Fields
-	slices.SortFunc(fields, func(n1, n2 FieldNode) int { return cmpOrd(n1.Ord, n2.Ord) })
-	checkNodeOrder(errs, len(fields), func(i int) iterOrdElem { return iterOrdElem{ord: fields[i].Ord, node: &fields[i]} })
-}
-
-func checkUnionOrder(node *UnionNode, errs *[]error) {
-	options := node.Options
-	slices.SortFunc(options, func(n1, n2 OptionNode) int { return cmpOrd(n1.Ord, n2.Ord) })
-	checkNodeOrder(errs, len(options), func(i int) iterOrdElem { return iterOrdElem{ord: options[i].Ord, node: &options[i]} })
-}
-
-func checkEnumOrder(node *EnumNode, errs *[]error) {
-	cases := node.Cases
-	slices.SortFunc(cases, func(n1, n2 CaseNode) int { return cmpOrd(n1.Ord, n2.Ord) })
-	checkNodeOrder(errs, len(cases), func(i int) iterOrdElem { return iterOrdElem{ord: cases[i].Ord, node: &cases[i]} })
-}
-
-func checkProcOrder(node *ServiceNode, errs *[]error) {
-	procs := node.Procedures
-	slices.SortFunc(procs, func(n1, n2 RpcNode) int { return cmpOrd(n1.Ord, n2.Ord) })
-	checkNodeOrder(errs, len(procs), func(i int) iterOrdElem { return iterOrdElem{ord: procs[i].Ord, node: &procs[i]} })
-}
-
-func validateTypes(nodes []Node, errs *[]error) {
+func (b *CodeBuilder) validateTypes(nodes []Node) {
 	for _, n := range nodes {
 		switch node := n.(type) {
 		case *StructNode:
-			checkFieldOrder(node, errs)
+			slices.SortFunc(node.Fields, cmpFieldOrd)
+			checkNodeOrder(node.Fields, b.errs)
 		case *UnionNode:
-			checkUnionOrder(node, errs)
+			slices.SortFunc(node.Options, cmpOptionOrd)
+			checkNodeOrder(node.Options, b.errs)
 		case *EnumNode:
-			checkEnumOrder(node, errs)
+			slices.SortFunc(node.Cases, cmpCaseOrd)
+			checkNodeOrder(node.Cases, b.errs)
 		case *ServiceNode:
-			checkProcOrder(node, errs)
+			slices.SortFunc(node.Procedures, cmpRpcOrd)
+			checkNodeOrder(node.Procedures, b.errs)
 		}
 	}
-}
-
-type PropTable = map[string]string
-
-func makePropTable(nodes []Node) PropTable {
-	propTable := make(PropTable)
-	for _, n := range nodes {
-		node, ok := n.(*PropertyNode)
-		if !ok || node.Poisoned {
-			continue
-		}
-		propTable[node.Name] = node.Value
-	}
-	return propTable
-}
-
-type ImportTable = map[string]Node
-
-func makeImportTable() ImportTable {
-	importTable := make(ImportTable)
-	return importTable
-}
-
-type CodeBuilder struct {
-	sb          strings.Builder
-	propTable   PropTable
-	importTable ImportTable
-	errs        *[]error
-}
-
-func makeCodeBuilder(propTable PropTable, errs *[]error) CodeBuilder {
-	return CodeBuilder{propTable: propTable, errs: errs}
 }
 
 func (b *CodeBuilder) build(n Node) {
@@ -208,7 +149,7 @@ func (b *CodeBuilder) build(n Node) {
 	}
 }
 
-// write this operation is common enough to extract it out to a utility function
+// this operation is common enough to extract it out to a utility function
 func (b *CodeBuilder) w(s string) {
 	b.sb.WriteString(s)
 }
@@ -221,7 +162,7 @@ func (b *CodeBuilder) buildTypeRef(ref TypeNode) {
 		}
 		b.w("]")
 	}
-	b.w(ref.Iden)
+	b.w(ref.RType.Iden)
 }
 
 func (b *CodeBuilder) buildStruct(strct *StructNode) {
@@ -234,8 +175,11 @@ func (b *CodeBuilder) buildStruct(strct *StructNode) {
 	b.w(strct.Name)
 	b.w(" struct {\n")
 	for _, field := range strct.Fields {
+		b.w("\t")
 		b.w(field.Name)
+		b.w("\t")
 		b.buildTypeRef(field.Type)
+		b.w("\n")
 	}
 	b.w("}\n\n")
 
@@ -247,27 +191,60 @@ func (b *CodeBuilder) buildUnion(union *UnionNode) {
 		return
 	}
 
+	writeOptionStruct := func(option *OptionNode) {
+		b.w(union.Name)
+		b.w(option.RType.Iden)
+		b.w("Opt")
+	}
+
 	// build out the union type definition
 	b.w("type ")
 	b.w(union.Name)
 	b.w(" interface {\n")
 	for _, option := range union.Options {
-		b.w(option.Type.Iden)
+		b.w("\t")
+		b.w(option.RType.Iden)
 		b.w("() *")
-		b.w(option.Type.Iden)
+		writeOptionStruct(option)
 		b.w("\n")
 	}
-	b.w("}\n")
+	b.w("}\n\n")
 
-	// each union case is a struct that contains the option as a single field
+	defaultName := union.Name + "Unimplemented"
+
+	// each union option contains a default implementation for each of the interface methods
+	b.w("type ")
+	b.w(defaultName)
+	b.w(" struct {}\n\n")
+	for _, option := range union.Options {
+		b.w("func (_ *")
+		b.w(defaultName)
+		b.w(") ")
+		b.w(option.RType.Iden)
+		b.w("() *")
+		writeOptionStruct(option)
+		b.w("{ return nil } \n")
+	}
+	b.w("\n")
+
+	// each union option is a struct that contains the option as a single field
 	for _, option := range union.Options {
 		b.w("type ")
-		b.w(union.Name)
-		b.w(option.Type.Iden)
-		b.w("Option struct {\n")
-		b.w(option.Type.Iden)
-		b.w("\n")
-		b.w("}\n\n")
+		writeOptionStruct(option)
+		b.w(" struct {\n")
+		b.w("\t")
+		b.w(option.RType.Iden)
+		b.w("\n\t")
+		b.w(defaultName)
+		b.w("\n}\n\n")
+
+		b.w("func (o *")
+		writeOptionStruct(option)
+		b.w(") ")
+		b.w(option.RType.Iden)
+		b.w("() *")
+		writeOptionStruct(option)
+		b.w(" { return o }\n\n")
 	}
 
 	// build out the union's serialize and deserialize methods
@@ -284,8 +261,8 @@ func (b *CodeBuilder) buildEnum(enum *EnumNode) {
 	b.w(" int\n\n")
 	b.w("const (\n")
 	for i, c := range enum.Cases {
+		b.w("\t")
 		b.w(enum.Name)
-		b.w("_")
 		b.w(c.Name)
 		if i == 0 {
 			b.w(" ")
@@ -314,16 +291,16 @@ func (b *CodeBuilder) buildPackage(pack string) {
 func runCodeBuilder(program string, pack string, errs *[]error) string {
 	nodes := runParser(program, errs)
 
-	prepareTypes(nodes, nil, errs)
-	validateTypes(nodes, errs)
+	builder := makeCodeBuilder(errs)
+
+	builder.buildPropTable(nodes)
+	builder.prepareTypes(nodes, nil)
+	builder.validateTypes(nodes)
 
 	if len(*errs) > 0 {
 		return ""
 	}
 
-	propTable := makePropTable(nodes)
-
-	builder := makeCodeBuilder(propTable, errs)
 	builder.buildPackage(pack)
 	for _, node := range nodes {
 		builder.build(node)
