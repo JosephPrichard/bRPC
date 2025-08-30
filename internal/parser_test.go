@@ -17,7 +17,9 @@ func TestParser_Properties(t *testing.T) {
 
 	var errs []error
 	nodes := runParser(input, &errs)
-	WalkMetaList(Node.Clear, nodes)
+	ClearNodeList(nodes)
+
+	t.Logf("\n%s\n", StringifyAst(nodes))
 
 	expectedNodes := []Node{
 		&ImportNode{Path: "/services/schemas/animals"},
@@ -49,7 +51,9 @@ func TestParser_Struct(t *testing.T) {
 	`
 	var errs []error
 	nodes := runParser(input, &errs)
-	WalkMetaList(Node.Clear, nodes)
+	ClearNodeList(nodes)
+
+	t.Logf("\n%s\n", StringifyAst(nodes))
 
 	expectedNodes := []Node{
 		&StructNode{
@@ -110,7 +114,9 @@ func TestParser_Enum(t *testing.T) {
 	`
 	var errs []error
 	nodes := runParser(input, &errs)
-	WalkMetaList(Node.Clear, nodes)
+	ClearNodeList(nodes)
+
+	t.Logf("\n%s\n", StringifyAst(nodes))
 
 	expectedNodes := []Node{
 		&EnumNode{
@@ -143,7 +149,9 @@ func TestParser_Union(t *testing.T) {
 	`
 	var errs []error
 	nodes := runParser(input, &errs)
-	WalkMetaList(Node.Clear, nodes)
+	ClearNodeList(nodes)
+
+	t.Logf("\n%s\n", StringifyAst(nodes))
 
 	expectedNodes := []Node{
 		&UnionNode{
@@ -185,7 +193,9 @@ func TestParser_Service(t *testing.T) {
 	`
 	var errs []error
 	nodes := runParser(input, &errs)
-	WalkMetaList(Node.Clear, nodes)
+	ClearNodeList(nodes)
+
+	t.Logf("\n%s\n", StringifyAst(nodes))
 
 	expectedNodes := []Node{
 		&ServiceNode{
@@ -304,7 +314,7 @@ func TestParser_Errors(t *testing.T) {
 			},
 			errs: []error{
 				&ParseErr{
-					actual:   Token{TokVal{Kind: TokInteger, Value: "5"}, Positions{}},
+					actual:   Token{TokVal{Kind: TokInteger, Value: "5", Num: 5}, Positions{}},
 					nodeKind: MessageNodeKind,
 					errKind:  SizeErrKind,
 				},
@@ -417,7 +427,7 @@ func TestParser_Errors(t *testing.T) {
 							Name:     "Data4",
 							Size:     16,
 							Options: []*OptionNode{
-								{RType: RType{Iden: "One"}, Ordered: Ordered{Ord: 1}},
+								{Iden: "One", Ordered: Ordered{Ord: 1}},
 								{Poisoned: true, Ordered: Ordered{Ord: 2}},
 							},
 						},
@@ -431,7 +441,7 @@ func TestParser_Errors(t *testing.T) {
 					expected: []TokKind{TokTypeRef},
 				},
 				&ParseErr{
-					actual:   Token{TokVal{Kind: TokInteger, Value: "5"}, Positions{}},
+					actual:   Token{TokVal{Kind: TokInteger, Value: "5", Num: 5}, Positions{}},
 					nodeKind: OptionNodeKind,
 					expected: []TokKind{TokIden},
 				},
@@ -463,7 +473,7 @@ func TestParser_Errors(t *testing.T) {
 			},
 			errs: []error{
 				&ParseErr{
-					actual:   Token{TokVal{Kind: TokInteger, Value: "2"}, Positions{}},
+					actual:   Token{TokVal{Kind: TokInteger, Value: "2", Num: 2}, Positions{}},
 					nodeKind: CaseNodeKind,
 					expected: []TokKind{TokIden},
 				},
@@ -552,7 +562,7 @@ func TestParser_Errors(t *testing.T) {
 		t.Run(fmt.Sprintf("test/%s", test.name), func(t *testing.T) {
 			var errs []error
 			nodes := runParser(test.input, &errs)
-			WalkMetaList(Node.Clear, nodes)
+			ClearNodeList(nodes)
 
 			printLine := func(err string) {
 				t.Log(err)

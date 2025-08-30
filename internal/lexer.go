@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -131,6 +132,7 @@ type TokVal struct {
 	Kind     TokKind
 	Value    string
 	Expected TokKind // the expected token whenever an error is occurred, only populated for Kind of TokErr
+	Num      uint64  // only populated if the token has a numeric value (TokOrd, TokInteger)
 }
 
 func (t TokVal) String() string {
@@ -168,14 +170,22 @@ func makeLexer(input string) Lexer {
 	return Lexer{input: input, tokens: make([]Token, 0)}
 }
 
-func (lex *Lexer) emit(tok TokKind) {
-	val := lex.input[lex.start:lex.curr]
-	lex.tokens = append(lex.tokens, Token{TokVal{Kind: tok, Value: val}, Positions{B: lex.start, E: lex.curr}})
+func (lex *Lexer) span() string {
+	return lex.input[lex.start:lex.curr]
+}
+
+func (lex *Lexer) makePositions() Positions {
+	return Positions{B: lex.start, E: lex.curr}
+}
+
+func (lex *Lexer) emit(kind TokKind) {
+	value := lex.span()
+	lex.tokens = append(lex.tokens, Token{TokVal{Kind: kind, Value: value}, lex.makePositions()})
 	lex.skip()
 }
 
 func (lex *Lexer) emitText() {
-	str := lex.input[lex.start:lex.curr]
+	str := lex.span()
 
 	kind := TokIden
 	switch str {
@@ -203,13 +213,19 @@ func (lex *Lexer) emitText() {
 		kind = TokImport
 	}
 
-	lex.tokens = append(lex.tokens, Token{TokVal{Kind: kind, Value: str}, Positions{B: lex.start, E: lex.curr}})
+	lex.tokens = append(lex.tokens, Token{TokVal{Kind: kind, Value: str}, lex.makePositions()})
 	lex.skip()
 }
 
-func (lex *Lexer) emitNext(tok TokKind) {
+func (lex *Lexer) emitNumeric(kind TokKind, num uint64) {
+	value := lex.span()
+	lex.tokens = append(lex.tokens, Token{TokVal{Kind: kind, Value: value, Num: num}, lex.makePositions()})
+	lex.skip()
+}
+
+func (lex *Lexer) emitNext(kind TokKind) {
 	lex.consume()
-	lex.emit(tok)
+	lex.emit(kind)
 }
 
 func (lex *Lexer) emitErr(expected TokKind) {
@@ -220,11 +236,9 @@ func (lex *Lexer) emitErr(expected TokKind) {
 		lex.acceptUntil(whitespace + control)
 	}
 
-	val := lex.input[lex.start:lex.curr]
-	token := Token{
-		TokVal{Kind: TokErr, Value: val, Expected: expected},
-		Positions{B: lex.start, E: lex.curr},
-	}
+	value := lex.span()
+	token := Token{TokVal{Kind: TokErr, Value: value, Expected: expected}, lex.makePositions()}
+
 	lex.tokens = append(lex.tokens, token)
 	lex.skip()
 }
@@ -305,7 +319,14 @@ func (lex *Lexer) lexInteger() {
 		lex.emitErr(kind)
 		return
 	}
-	lex.emit(kind)
+
+	numStr := lex.span()
+	num, err := strconv.ParseUint(numStr, 10, 64)
+	if err != nil {
+		// we can panic here because the lexer should have stopped if there were any non-numerics
+		panic(fmt.Sprintf("assertion error: integer token is invalid: %v", err))
+	}
+	lex.emitNumeric(TokInteger, num)
 }
 
 func (lex *Lexer) lexComment() {
@@ -330,7 +351,14 @@ func (lex *Lexer) lexOrd() {
 		lex.emitErr(kind)
 		return
 	}
-	lex.emit(kind)
+
+	value := lex.span()
+	ord, strErr := strconv.ParseUint(value[1:], 10, 64)
+	if strErr != nil {
+		// we can panic here because the lexer should have stopped if there were any non-numerics
+		panic(fmt.Sprintf("assertion error: ord token is invalid: %v", strErr))
+	}
+	lex.emitNumeric(TokOrd, ord)
 }
 
 func (lex *Lexer) lexText() {

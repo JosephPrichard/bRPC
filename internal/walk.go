@@ -1,37 +1,156 @@
 package internal
 
-func WalkMeta(visit func(Node), n Node) {
+import (
+	"fmt"
+	"strings"
+)
+
+func ClearNode(n Node) {
 	if n == nil {
 		return
 	}
-	visit(n)
+	n.Clear()
 	switch node := n.(type) {
 	case *StructNode:
-		WalkMetaList(visit, node.LocalDefs)
+		ClearNodeList(node.LocalDefs)
 		for _, field := range node.Fields {
-			WalkMeta(visit, field)
-
+			ClearNode(field)
 		}
 	case *UnionNode:
-		WalkMetaList(visit, node.LocalDefs)
+		ClearNodeList(node.LocalDefs)
 		for _, option := range node.Options {
-			WalkMeta(visit, option)
+			ClearNode(option)
 		}
 	case *ServiceNode:
-		WalkMetaList(visit, node.LocalDefs)
+		ClearNodeList(node.LocalDefs)
 		for _, proc := range node.Procedures {
-			WalkMeta(visit, proc)
+			ClearNode(proc)
 		}
 	case *RpcNode:
-		WalkMeta(visit, &node.Arg)
-		WalkMeta(visit, &node.Ret)
+		ClearNode(&node.Arg)
+		ClearNode(&node.Ret)
 	case *FieldNode:
-		WalkMeta(visit, &node.Type)
+		ClearNode(&node.Type)
 	}
 }
 
-func WalkMetaList(visit func(Node), nodes []Node) {
+func ClearNodeList(nodes []Node) {
 	for _, node := range nodes {
-		WalkMeta(visit, node)
+		ClearNode(node)
 	}
+}
+
+func StringifyNode(sb *strings.Builder, n Node, depth int) {
+	if n == nil {
+		return
+	}
+
+	write := func(s string) {
+		sb.WriteString(s)
+	}
+	indents := func() {
+		for range depth {
+			write("\t")
+		}
+	}
+
+	nextDepth := depth + 1
+
+	switch node := n.(type) {
+	case *ImportNode:
+		write(fmt.Sprintf("import \"%s\"\n", node.Path))
+	case *PropertyNode:
+		write(fmt.Sprintf("%s \"%s\"\n", node.Name, node.Value))
+	case *StructNode:
+		indents()
+		write(fmt.Sprintf("message %s struct {\n", node.Name))
+		for _, field := range node.Fields {
+			StringifyNode(sb, field, nextDepth)
+		}
+		StringifyNodeList(sb, node.LocalDefs, nextDepth)
+		indents()
+		write("}\n")
+	case *UnionNode:
+		indents()
+		write(fmt.Sprintf("message %s union {\n", node.Name))
+		for _, option := range node.Options {
+			StringifyNode(sb, option, nextDepth)
+		}
+		StringifyNodeList(sb, node.LocalDefs, nextDepth)
+		indents()
+		write("}\n")
+	case *EnumNode:
+		indents()
+		write(fmt.Sprintf("message %s enum {\n", node.Name))
+		for _, option := range node.Cases {
+			StringifyNode(sb, option, nextDepth)
+		}
+		indents()
+		write("}\n")
+	case *FieldNode:
+		indents()
+		write(fmt.Sprintf("%s %s @%d ", node.Modifier, node.Name, node.Ord))
+		StringifyNode(sb, &node.Type, nextDepth)
+		write(";\n")
+	case *CaseNode:
+		indents()
+		write(fmt.Sprintf("@%d %s;\n", node.Ord, node.Name))
+	case *OptionNode:
+		indents()
+		write(fmt.Sprintf("@%d %s;\n", node.Ord, node.Iden))
+	case *ServiceNode:
+		indents()
+		write(fmt.Sprintf("service %s {\n", node.Name))
+		for _, proc := range node.Procedures {
+			StringifyNode(sb, proc, nextDepth)
+		}
+		StringifyNodeList(sb, node.LocalDefs, nextDepth)
+		indents()
+		write("}\n")
+	case *RpcNode:
+		indents()
+		write(fmt.Sprintf("rpc @%d %s(", node.Ord, node.Name))
+		StringifyNode(sb, &node.Arg, depth)
+		write(") returns (")
+		StringifyNode(sb, &node.Ret, depth)
+		write(");\n")
+	case *TypeNode:
+		for _, size := range node.Array {
+			if size != 0 {
+				write(fmt.Sprintf("[%d]", size))
+			} else {
+				write("[]")
+			}
+		}
+		write(node.Iden)
+		for i, t := range node.TypeArgs {
+			if i == 0 {
+				write("(")
+			}
+			StringifyNode(sb, &t, depth)
+			if i < len(node.TypeArgs)-1 {
+				write(", ")
+			} else {
+				write(")")
+			}
+		}
+	}
+}
+
+func StringifyNodeList(sb *strings.Builder, nodes []Node, depth int) {
+	for _, node := range nodes {
+		if depth != 0 {
+			switch node.(type) {
+			case *StructNode, *UnionNode, *EnumNode:
+				sb.WriteString("\n")
+			}
+		}
+		StringifyNode(sb, node, depth)
+	}
+}
+
+func StringifyAst(nodes []Node) string {
+	var sb strings.Builder
+	StringifyNodeList(&sb, nodes, 0)
+	return sb.String()
 }

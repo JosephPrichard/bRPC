@@ -132,6 +132,19 @@ const (
 	Deprecated
 )
 
+func (m Modifier) String() string {
+	var modStr string
+	switch m {
+	case Required:
+		modStr = "required"
+	case Optional:
+		modStr = "optional"
+	case Deprecated:
+		modStr = "deprecated"
+	}
+	return modStr
+}
+
 type FieldNode struct {
 	Positions
 	Ordered

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 	"unicode"
 )
@@ -206,7 +205,7 @@ func (p *Parser) parseString(token *Token) (string, ParserError) {
 	*token = t
 
 	if len(token.Value) < 2 {
-		panic(fmt.Sprintf("assertion error: import path string must be at least length 2, was: %s", token.Value))
+		panic(fmt.Sprintf("assertion error: string must be at least length 2, was: %s", token.Value))
 	}
 
 	var sb strings.Builder
@@ -276,10 +275,8 @@ func (p *Parser) parseMessageSize(callKind NodeKind) (uint64, ParserError) {
 	if err != nil {
 		return 0, err
 	}
-	size, intErr := strconv.ParseUint(token.Value, 10, 64)
-	if intErr != nil {
-		panic(fmt.Sprintf("assertion error: integer token is invalid: %v", intErr))
-	}
+	size := token.Num
+
 	if _, err := p.expect(TokRBrack); err != nil {
 		return 0, err
 	}
@@ -519,18 +516,6 @@ func (p *Parser) parseUnion(name string, nameOk bool, size uint64) Node {
 	}
 }
 
-func (p *Parser) parseNumeric() (int64, ParserError) {
-	token, err := p.expect(TokInteger)
-	if err != nil {
-		return 0, err
-	}
-	value, convErr := strconv.ParseInt(token.Value, 10, 64)
-	if convErr != nil {
-		return 0, makeKindErr(token, NumErrKind)
-	}
-	return value, nil
-}
-
 func (p *Parser) parseCase() *CaseNode {
 	var ec CaseNode
 
@@ -605,12 +590,9 @@ func (p *Parser) parseArraySize() (uint64, ParserError) {
 	token := p.next()
 	switch token.Kind {
 	case TokInteger:
+		size := token.Num
 		if _, err := p.expect(TokRBrack); err != nil {
 			return 0, err
-		}
-		size, err := strconv.ParseUint(token.Value, 10, 64)
-		if err != nil {
-			panic(fmt.Sprintf("assertion error: integer token is invalid: %v", err))
 		}
 		return size, nil
 	case TokRBrack:
@@ -718,10 +700,7 @@ func (p *Parser) parseOrdWithToken(token *Token) (uint64, ParserError) {
 	if len(token.Value) < 2 {
 		panic("assertion error: an ord should have at least 2 characters")
 	}
-	ord, strErr := strconv.ParseUint(token.Value[1:], 10, 64)
-	if strErr != nil {
-		panic(fmt.Sprintf("assertion error: ord token is invalid: %v", err))
-	}
+	ord := token.Num
 	return ord, nil
 }
 
