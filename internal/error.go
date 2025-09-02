@@ -112,49 +112,52 @@ func (err *ParseErr) Error() string {
 	return sb.String()
 }
 
-type CodegenErrKind int
+type TransformErrKind int
 
 const (
-	RedefinedErrKind CodegenErrKind = iota
+	RedefErrKind TransformErrKind = iota
+	UndefErrKind
 	FirstOrdErrKind
 	OrdErrKind
 )
 
-type CodegenErr struct {
-	kind   CodegenErrKind
+type TransformErr struct {
+	kind   TransformErrKind
 	node   Node
 	iden   string
 	expOrd uint64
 	gotOrd uint64
 }
 
-func makeRedefinedErr(node Node, iden string) error {
-	return &CodegenErr{node: node, iden: iden, kind: RedefinedErrKind}
+func makeRedefErr(node Node, iden string) error {
+	return &TransformErr{node: node, kind: RedefErrKind, iden: iden}
 }
 
-func makeFstOrdErr(node Node) error {
-	return &CodegenErr{node: node, kind: FirstOrdErrKind}
+func makeUndefErr(node Node, iden string) error {
+	return &TransformErr{node: node, kind: UndefErrKind, iden: iden}
 }
 
 func makeOrdErr(node Node, expOrd uint64, gotOrd uint64) error {
-	return &CodegenErr{node: node, kind: OrdErrKind, expOrd: expOrd, gotOrd: gotOrd}
+	return &TransformErr{node: node, kind: OrdErrKind, expOrd: expOrd, gotOrd: gotOrd}
 }
 
-func (err *CodegenErr) Error() string {
+func (err *TransformErr) Error() string {
 	var sb strings.Builder
 	sb.WriteString(err.node.Header())
+	sb.WriteRune(' ')
+	sb.WriteString(err.node.Kind().String())
+	sb.WriteString(": ")
 
 	switch err.kind {
-	case RedefinedErrKind:
+	case RedefErrKind:
 		sb.WriteString(fmt.Sprintf("\"%s\" is redefined", err.iden))
-	case FirstOrdErrKind:
-		sb.WriteString(fmt.Sprintf("%s first ord must be '1'", err.node.Kind().String()))
+	case UndefErrKind:
+		sb.WriteString(fmt.Sprintf("\"%s\" is undefined", err.iden))
 	case OrdErrKind:
-		sb.WriteString(fmt.Sprintf("%s ord '%d' should be '%d'", err.node.Kind().String(), err.gotOrd, err.expOrd))
+		sb.WriteString(fmt.Sprintf("order tag '@%d' should be '@%d'", err.gotOrd, err.expOrd))
+
 	}
 
-	sb.WriteString(" while inside ")
-	sb.WriteString(err.node.Kind().String())
 	return sb.String()
 }
 

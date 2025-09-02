@@ -21,6 +21,10 @@ func ClearNode(n Node) {
 		for _, option := range node.Options {
 			ClearNode(option)
 		}
+	case *EnumNode:
+		for _, c := range node.Cases {
+			ClearNode(c)
+		}
 	case *ServiceNode:
 		ClearNodeList(node.LocalDefs)
 		for _, proc := range node.Procedures {
@@ -60,10 +64,10 @@ func StringifyNode(sb *strings.Builder, n Node, depth int) {
 	case *ImportNode:
 		write(fmt.Sprintf("import \"%s\"\n", node.Path))
 	case *PropertyNode:
-		write(fmt.Sprintf("%s \"%s\"\n", node.Name, node.Value))
+		write(fmt.Sprintf("%s \"%s\"\n", node.Iden, node.Value))
 	case *StructNode:
 		indents()
-		write(fmt.Sprintf("message %s struct {\n", node.Name))
+		write(fmt.Sprintf("message %s struct {\n", node.Iden))
 		for _, field := range node.Fields {
 			StringifyNode(sb, field, nextDepth)
 		}
@@ -72,7 +76,7 @@ func StringifyNode(sb *strings.Builder, n Node, depth int) {
 		write("}\n")
 	case *UnionNode:
 		indents()
-		write(fmt.Sprintf("message %s union {\n", node.Name))
+		write(fmt.Sprintf("message %s union {\n", node.Iden))
 		for _, option := range node.Options {
 			StringifyNode(sb, option, nextDepth)
 		}
@@ -81,26 +85,26 @@ func StringifyNode(sb *strings.Builder, n Node, depth int) {
 		write("}\n")
 	case *EnumNode:
 		indents()
-		write(fmt.Sprintf("message %s enum {\n", node.Name))
-		for _, option := range node.Cases {
-			StringifyNode(sb, option, nextDepth)
+		write(fmt.Sprintf("message %s enum {\n", node.Iden))
+		for _, c := range node.Cases {
+			StringifyNode(sb, c, nextDepth)
 		}
 		indents()
 		write("}\n")
 	case *FieldNode:
 		indents()
-		write(fmt.Sprintf("%s %s @%d ", node.Modifier, node.Name, node.Ord))
+		write(fmt.Sprintf("%s %s @%d ", node.Modifier, node.Iden, node.Ord))
 		StringifyNode(sb, &node.Type, nextDepth)
 		write(";\n")
 	case *CaseNode:
 		indents()
-		write(fmt.Sprintf("@%d %s;\n", node.Ord, node.Name))
+		write(fmt.Sprintf("@%d %s;\n", node.Ord, node.Iden))
 	case *OptionNode:
 		indents()
 		write(fmt.Sprintf("@%d %s;\n", node.Ord, node.Iden))
 	case *ServiceNode:
 		indents()
-		write(fmt.Sprintf("service %s {\n", node.Name))
+		write(fmt.Sprintf("service %s {\n", node.Iden))
 		for _, proc := range node.Procedures {
 			StringifyNode(sb, proc, nextDepth)
 		}
@@ -109,7 +113,7 @@ func StringifyNode(sb *strings.Builder, n Node, depth int) {
 		write("}\n")
 	case *RpcNode:
 		indents()
-		write(fmt.Sprintf("rpc @%d %s(", node.Ord, node.Name))
+		write(fmt.Sprintf("rpc @%d %s(", node.Ord, node.Iden))
 		StringifyNode(sb, &node.Arg, depth)
 		write(") returns (")
 		StringifyNode(sb, &node.Ret, depth)

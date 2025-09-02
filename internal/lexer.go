@@ -267,7 +267,7 @@ func (lex *Lexer) skip() {
 }
 
 func (lex *Lexer) accept(valid string) bool {
-	if strings.IndexRune(valid, lex.peek()) >= 0 {
+	if strings.ContainsRune(valid, lex.peek()) {
 		lex.consume()
 		return true
 	}
@@ -275,14 +275,11 @@ func (lex *Lexer) accept(valid string) bool {
 }
 
 func (lex *Lexer) take(valid string) bool {
-	if strings.IndexRune(valid, lex.next()) >= 0 {
-		return true
-	}
-	return false
+	return strings.ContainsRune(valid, lex.next())
 }
 
 func (lex *Lexer) assert(valid string) bool {
-	if strings.IndexRune(valid, lex.peek()) >= 0 {
+	if strings.ContainsRune(valid, lex.peek()) {
 		return true
 	}
 	lex.consume()
@@ -290,13 +287,13 @@ func (lex *Lexer) assert(valid string) bool {
 }
 
 func (lex *Lexer) acceptWhile(valid string) {
-	for strings.IndexRune(valid, lex.peek()) >= 0 {
+	for strings.ContainsRune(valid, lex.peek()) {
 		lex.consume()
 	}
 }
 
 func (lex *Lexer) acceptUntil(invalid string) {
-	for strings.IndexRune(invalid, lex.peek()) < 0 {
+	for !strings.ContainsRune(invalid, lex.peek()) {
 		lex.consume()
 	}
 }

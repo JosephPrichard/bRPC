@@ -117,12 +117,12 @@ func (p *Parser) emitError(err error) {
 	p.hasEofErr = p.peek().Kind == TokEof
 }
 
-var Eof = errors.New("reached end of stream while parsing")
+var ErrEof = errors.New("reached end of stream while parsing")
 
 func (p *Parser) parse() {
 	for {
 		root, err := p.parseRoot()
-		if errors.Is(err, Eof) {
+		if errors.Is(err, ErrEof) {
 			break
 		}
 		if err != nil {
@@ -142,7 +142,7 @@ func (p *Parser) parseRoot() (Node, error) {
 	token := p.peek()
 	switch token.Kind {
 	case TokEof:
-		return nil, Eof
+		return nil, ErrEof
 	case TokMessage:
 		p.eat()
 		node, err = p.parseMessage()
@@ -179,7 +179,7 @@ func (p *Parser) parseProperty() Node {
 		panic(fmt.Sprintf("assertion error: %s", err))
 	}
 	prop.B = token.B
-	prop.Name = token.Value
+	prop.Iden = token.Value
 
 	if _, err := p.expect(TokEqual); err != nil {
 		return forwardErr(err)
@@ -371,7 +371,7 @@ func (p *Parser) parseTypeParams() ([]string, ParserError) {
 }
 
 func (p *Parser) parseStruct(name string, nameOk bool) Node {
-	strct := StructNode{Name: name}
+	strct := StructNode{Iden: name}
 	strct.Poisoned = !nameOk
 
 	forwardErr := func(err ParserError) {
@@ -453,15 +453,17 @@ func (p *Parser) parseOption() *OptionNode {
 	}
 	option.Iden = token.Value
 
-	if firstToken, ok := p.eatWhile(TokSemicolon); !ok {
+	firstToken, ok := p.eatWhile(TokSemicolon)
+	if !ok {
 		return forwardErr(makeExpectErr(firstToken, TokSemicolon))
 	}
+	option.E = firstToken.E
 
 	return &option
 }
 
 func (p *Parser) parseUnion(name string, nameOk bool, size uint64) Node {
-	union := UnionNode{Name: name, Size: size}
+	union := UnionNode{Iden: name, Size: size}
 	union.Poisoned = !nameOk
 
 	forwardErr := func(err ParserError) {
@@ -520,6 +522,7 @@ func (p *Parser) parseCase() *CaseNode {
 	var ec CaseNode
 
 	forwardErr := func(err ParserError) *CaseNode {
+		ec.E = err.token().E
 		ec.Poisoned = true
 		err.addKind(CaseNodeKind)
 		p.skipUntilSentinel()
@@ -527,26 +530,32 @@ func (p *Parser) parseCase() *CaseNode {
 		return &ec
 	}
 
-	ord, err := p.parseOrd()
+	var token Token
+
+	ord, err := p.parseOrdWithToken(&token)
 	if err != nil {
 		return forwardErr(err)
 	}
 	ec.Ord = ord
+	ec.B = token.B
 
-	token, err := p.expect(TokIden)
+	token, err = p.expect(TokIden)
 	if err != nil {
 		return forwardErr(err)
 	}
-	ec.Name = token.Value
+	ec.Iden = token.Value
 
-	if firstToken, ok := p.eatWhile(TokSemicolon); !ok {
+	firstToken, ok := p.eatWhile(TokSemicolon)
+	if !ok {
 		return forwardErr(makeExpectErr(firstToken, TokSemicolon))
 	}
+	ec.E = firstToken.E
+
 	return &ec
 }
 
 func (p *Parser) parseEnum(name string, nameOk bool, size uint64) Node {
-	enum := EnumNode{Name: name, Size: size}
+	enum := EnumNode{Iden: name, Size: size}
 	enum.Poisoned = !nameOk
 
 	forwardErr := func(err ParserError) {
@@ -659,7 +668,7 @@ func (p *Parser) parseType() (TypeNode, ParserError) {
 			}
 			array = append(array, size)
 		case TokIden:
-			iden := token.Value
+			name := token.Value
 
 			// select the beginning token depending on whether the type ref is an array or not
 			var tokenB = token
@@ -673,7 +682,7 @@ func (p *Parser) parseType() (TypeNode, ParserError) {
 				return forwardErr(err)
 			}
 			node := TypeNode{
-				Iden:      iden,
+				Iden:      name,
 				Array:     array,
 				TypeArgs:  typeArgs,
 				Positions: Positions{B: tokenB.B, E: tokenE.E},
@@ -737,7 +746,7 @@ func (p *Parser) parseField() *FieldNode {
 	if token, err = p.expect(TokIden); err != nil {
 		return forwardErr(err)
 	}
-	field.Name = token.Value
+	field.Iden = token.Value
 
 	if ord, err = p.parseOrd(); err != nil {
 		return forwardErr(err)
@@ -780,7 +789,7 @@ func (p *Parser) parseService() Node {
 		forwardErr(err)
 		return &svc
 	}
-	svc.Name = token.Value
+	svc.Iden = token.Value
 	if _, err := p.expect(TokLBrace); err != nil {
 		forwardErr(err)
 		return &svc
@@ -838,7 +847,7 @@ func (p *Parser) parseRpc() *RpcNode {
 	if token, err = p.expect(TokIden); err != nil {
 		return forwardErr(err)
 	}
-	rpc.Name = token.Value
+	rpc.Iden = token.Value
 
 	if _, err = p.expect(TokLParen); err != nil {
 		return forwardErr(err)

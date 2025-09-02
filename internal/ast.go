@@ -53,72 +53,43 @@ func (kind NodeKind) String() string {
 	}
 }
 
-// Node a node represents a recursive ast node
 type Node interface {
 	Kind() NodeKind
 	Begin() int
 	End() int
 	Header() string
 	Clear()
+}
+
+type Member interface {
+	Node
+	Name() string
 	Order() uint64
 }
 
-type Ordered struct {
-	Ord uint64
-}
-
-func (o Ordered) Order() uint64 {
-	return o.Ord
-}
-
-type Unordered struct{}
-
-func (o Unordered) Order() uint64 {
-	return 0
-}
-
-type Positions struct {
-	B int
-	E int
-}
-
-func (r *Positions) Begin() int { return r.B }
-func (r *Positions) End() int   { return r.E }
-
-func (r *Positions) Header() string {
-	if r.B == r.E {
-		return fmt.Sprintf("%d:", r.B)
-	} else {
-		return fmt.Sprintf("%d:%d:", r.B, r.E)
-	}
-}
-
-func (r *Positions) Clear() {
-	r.E = 0
-	r.B = 0
+type TypedMember interface {
+	Member
+	Types(func(Type))
 }
 
 type PropertyNode struct {
 	Positions
-	Unordered
+	Iden     string
 	Poisoned bool
-	Name     string
 	Value    string
 }
 
 type ImportNode struct {
 	Positions
-	Unordered
 	Poisoned bool
 	Path     string
 }
 
 type StructNode struct {
 	Positions
-	Unordered
+	Iden       string
+	TypeTable  *TypeTable
 	Poisoned   bool
-	Table      *TypeTable
-	Name       string
 	Fields     []*FieldNode
 	TypeParams []string
 	LocalDefs  []Node
@@ -147,36 +118,34 @@ func (m Modifier) String() string {
 
 type FieldNode struct {
 	Positions
-	Ordered
+	Ord      uint64
+	Iden     string
 	Poisoned bool
 	Modifier Modifier
-	Name     string
 	Type     TypeNode
 }
 
 type EnumNode struct {
 	Positions
-	Unordered
-	Poisoned bool
-	Table    *TypeTable
-	Name     string
-	Size     uint64
-	Cases    []*CaseNode
+	Iden      string
+	TypeTable *TypeTable
+	Poisoned  bool
+	Size      uint64
+	Cases     []*CaseNode
 }
 
 type CaseNode struct {
 	Positions
-	Ordered
+	Ord      uint64
+	Iden     string
 	Poisoned bool
-	Name     string
 }
 
 type UnionNode struct {
 	Positions
-	Unordered
+	Iden       string
+	TypeTable  *TypeTable
 	Poisoned   bool
-	Table      *TypeTable
-	Name       string
 	Size       uint64
 	Options    []*OptionNode
 	TypeParams []string
@@ -185,54 +154,93 @@ type UnionNode struct {
 
 type OptionNode struct {
 	Positions
-	Ordered
-	Poisoned bool
+	Type
+	Ord      uint64
 	Iden     string
-	RType    RType
+	Poisoned bool
 }
 
 type ServiceNode struct {
 	Positions
-	Unordered
+	Iden       string
+	TypeTable  *TypeTable
 	Poisoned   bool
-	Table      *TypeTable
-	Name       string
 	Procedures []*RpcNode
 	LocalDefs  []Node
 }
 
 type RpcNode struct {
 	Positions
-	Ordered
+	Ord      uint64
+	Iden     string
 	Poisoned bool
-	Name     string
 	Arg      TypeNode
 	Ret      TypeNode
 }
 
 type TypeNode struct {
 	Positions
-	Unordered
+	Type
 	Iden     string
 	TypeArgs []TypeNode
 	Array    []uint64
-	RType    RType
 }
 
-func (node *PropertyNode) Kind() NodeKind { return PropertyNodeKind }
-func (node *ImportNode) Kind() NodeKind   { return ImportNodeKind }
-func (node *StructNode) Kind() NodeKind   { return StructNodeKind }
-func (node *EnumNode) Kind() NodeKind     { return EnumNodeKind }
-func (node *UnionNode) Kind() NodeKind    { return UnionNodeKind }
-func (node *ServiceNode) Kind() NodeKind  { return ServiceNodeKind }
-func (node *FieldNode) Kind() NodeKind    { return FieldNodeKind }
-func (node *OptionNode) Kind() NodeKind   { return OptionNodeKind }
-func (node *CaseNode) Kind() NodeKind     { return CaseNodeKind }
-func (node *RpcNode) Kind() NodeKind      { return RpcNodeKind }
-func (node *TypeNode) Kind() NodeKind     { return TypeNodeKind }
+type Positions struct {
+	B int
+	E int
+}
 
-func cmpOrd(o1 uint64, o2 uint64) int     { return int(o1 - o2) }
-func cmpFieldOrd(n1, n2 *FieldNode) int   { return cmpOrd(n1.Ord, n2.Ord) }
-func cmpOptionOrd(n1, n2 *OptionNode) int { return cmpOrd(n1.Ord, n2.Ord) }
-func cmpCaseOrd(n1, n2 *CaseNode) int     { return cmpOrd(n1.Ord, n2.Ord) }
-func cmpRpcOrd(n1, n2 *RpcNode) int       { return cmpOrd(n1.Ord, n2.Ord) }
+func (r *Positions) Begin() int { return r.B }
+func (r *Positions) End() int   { return r.E }
+
+func (r *Positions) Header() string {
+	if r.B == r.E {
+		return fmt.Sprintf("%d:", r.B)
+	} else {
+		return fmt.Sprintf("%d:%d:", r.B, r.E)
+	}
+}
+
+func (r *Positions) Clear() {
+	r.E = 0
+	r.B = 0
+}
+
+func (n *FieldNode) Name() string  { return n.Iden }
+func (n *OptionNode) Name() string { return n.Iden }
+func (n *CaseNode) Name() string   { return n.Iden }
+func (n *RpcNode) Name() string    { return n.Iden }
+
+func (n *FieldNode) Order() uint64  { return n.Ord }
+func (n *OptionNode) Order() uint64 { return n.Ord }
+func (n *CaseNode) Order() uint64   { return n.Ord }
+func (n *RpcNode) Order() uint64    { return n.Ord }
+
+func (n *FieldNode) Types(f func(Type)) {
+	f(n.Type.Type)
+}
+func (n *OptionNode) Types(f func(Type)) {
+	f(n.Type)
+}
+func (n *RpcNode) Types(f func(Type)) {
+	f(n.Arg.Type)
+	f(n.Ret.Type)
+}
+
+func (n *StructNode) Table() *TypeTable  { return n.TypeTable }
+func (n *UnionNode) Table() *TypeTable   { return n.TypeTable }
+func (n *EnumNode) Table() *TypeTable    { return n.TypeTable }
+func (n *ServiceNode) Table() *TypeTable { return n.TypeTable }
+
+func (n *PropertyNode) Kind() NodeKind { return PropertyNodeKind }
+func (n *ImportNode) Kind() NodeKind   { return ImportNodeKind }
+func (n *StructNode) Kind() NodeKind   { return StructNodeKind }
+func (n *EnumNode) Kind() NodeKind     { return EnumNodeKind }
+func (n *UnionNode) Kind() NodeKind    { return UnionNodeKind }
+func (n *ServiceNode) Kind() NodeKind  { return ServiceNodeKind }
+func (n *FieldNode) Kind() NodeKind    { return FieldNodeKind }
+func (n *OptionNode) Kind() NodeKind   { return OptionNodeKind }
+func (n *CaseNode) Kind() NodeKind     { return CaseNodeKind }
+func (n *RpcNode) Kind() NodeKind      { return RpcNodeKind }
+func (n *TypeNode) Kind() NodeKind     { return TypeNodeKind }

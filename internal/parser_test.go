@@ -2,9 +2,10 @@ package internal
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParser_Properties(t *testing.T) {
@@ -23,8 +24,8 @@ func TestParser_Properties(t *testing.T) {
 
 	expectedNodes := []Node{
 		&ImportNode{Path: "/services/schemas/animals"},
-		&PropertyNode{Name: "package", Value: "/hello/\\\"world\""},
-		&PropertyNode{Name: "constant", Value: "Value"},
+		&PropertyNode{Iden: "package", Value: "/hello/\\\"world\""},
+		&PropertyNode{Iden: "constant", Value: "Value"},
 	}
 
 	assert.Equal(t, expectedNodes, nodes)
@@ -57,41 +58,41 @@ func TestParser_Struct(t *testing.T) {
 
 	expectedNodes := []Node{
 		&StructNode{
-			Name: "Data1",
+			Iden: "Data1",
 			Fields: []*FieldNode{
-				{Modifier: Required, Name: "one", Ordered: Ordered{Ord: 1}, Type: TypeNode{Iden: "int128"}},
+				{Modifier: Required, Iden: "one", Ord: 1, Type: TypeNode{Iden: "int128"}},
 				{
 					Modifier: Required,
-					Name:     "two",
-					Ordered:  Ordered{Ord: 2},
+					Iden:     "two",
+					Ord:      2,
 					Type:     TypeNode{Iden: "int5", Array: []uint64{0}},
 				},
 				{
 					Modifier: Optional,
-					Name:     "three",
-					Ordered:  Ordered{Ord: 3},
+					Iden:     "three",
+					Ord:      3,
 					Type:     TypeNode{Iden: "int4", Array: []uint64{16}},
 				},
 				{
 					Modifier: Optional,
-					Name:     "four",
-					Ordered:  Ordered{Ord: 4},
+					Iden:     "four",
+					Ord:      4,
 					Type:     TypeNode{Iden: "int4", Array: []uint64{0, 4, 0}},
 				},
 			},
 			LocalDefs: []Node{
 				&StructNode{
-					Name: "Data2",
+					Iden: "Data2",
 					Fields: []*FieldNode{
-						{Modifier: Required, Name: "one", Ordered: Ordered{Ord: 1}, Type: TypeNode{Iden: "Data3"}},
+						{Modifier: Required, Iden: "one", Ord: 1, Type: TypeNode{Iden: "Data3"}},
 					},
 					LocalDefs: []Node{
 						&StructNode{
-							Name:       "Data3",
+							Iden:       "Data3",
 							TypeParams: []string{"A", "B"},
 							Fields: []*FieldNode{
-								{Modifier: Deprecated, Name: "one", Ordered: Ordered{Ord: 1}, Type: TypeNode{Iden: "A"}},
-								{Modifier: Required, Name: "two", Ordered: Ordered{Ord: 2}, Type: TypeNode{Iden: "B"}},
+								{Modifier: Deprecated, Iden: "one", Ord: 1, Type: TypeNode{Iden: "A"}},
+								{Modifier: Required, Iden: "two", Ord: 2, Type: TypeNode{Iden: "B"}},
 							},
 						},
 					},
@@ -120,12 +121,12 @@ func TestParser_Enum(t *testing.T) {
 
 	expectedNodes := []Node{
 		&EnumNode{
-			Name: "Data1",
+			Iden: "Data1",
 			Size: 16,
 			Cases: []*CaseNode{
-				{Ordered: Ordered{Ord: 1}, Name: "One"},
-				{Ordered: Ordered{Ord: 2}, Name: "Two"},
-				{Ordered: Ordered{Ord: 3}, Name: "Three"},
+				{Ord: 1, Iden: "One"},
+				{Ord: 2, Iden: "Two"},
+				{Ord: 3, Iden: "Three"},
 			},
 		},
 	}
@@ -155,21 +156,21 @@ func TestParser_Union(t *testing.T) {
 
 	expectedNodes := []Node{
 		&UnionNode{
-			Name:       "Data",
+			Iden:       "Data",
 			Size:       8,
 			TypeParams: []string{"A", "B", "C"},
 			Options: []*OptionNode{
-				{Ordered: Ordered{Ord: 1}, Iden: "Data2"},
-				{Ordered: Ordered{Ord: 2}, Iden: "Data1"},
-				{Ordered: Ordered{Ord: 3}, Iden: "Data"},
+				{Ord: 1, Iden: "Data2"},
+				{Ord: 2, Iden: "Data1"},
+				{Ord: 3, Iden: "Data"},
 			},
 			LocalDefs: []Node{
 				&UnionNode{
-					Name: "Data",
+					Iden: "Data",
 					Size: 16,
 					Options: []*OptionNode{
-						{Ordered: Ordered{Ord: 1}, Iden: "B"},
-						{Ordered: Ordered{Ord: 2}, Iden: "C"},
+						{Ord: 1, Iden: "B"},
+						{Ord: 2, Iden: "C"},
 					},
 				},
 			},
@@ -199,17 +200,17 @@ func TestParser_Service(t *testing.T) {
 
 	expectedNodes := []Node{
 		&ServiceNode{
-			Name: "ServiceA",
+			Iden: "ServiceA",
 			Procedures: []*RpcNode{
 				{
-					Ordered: Ordered{Ord: 1},
-					Name:    "Hello",
-					Arg:     TypeNode{Iden: "Test"},
-					Ret:     TypeNode{Iden: "Output"},
+					Ord:  1,
+					Iden: "Hello",
+					Arg:  TypeNode{Iden: "Test"},
+					Ret:  TypeNode{Iden: "Output"},
 				},
 				{
-					Ordered: Ordered{Ord: 2},
-					Name:    "World",
+					Ord:  2,
+					Iden: "World",
 					Arg: TypeNode{
 						Iden:     "Test1",
 						TypeArgs: []TypeNode{{Iden: "Arg1"}, {Iden: "Arg2"}, {Iden: "Arg3"}},
@@ -222,9 +223,9 @@ func TestParser_Service(t *testing.T) {
 			},
 			LocalDefs: []Node{
 				&StructNode{
-					Name: "Test",
+					Iden: "Test",
 					Fields: []*FieldNode{
-						{Modifier: Required, Name: "one", Ordered: Ordered{Ord: 1}, Type: TypeNode{Iden: "b24"}},
+						{Modifier: Required, Iden: "one", Ord: 1, Type: TypeNode{Iden: "b24"}},
 					},
 				},
 			},
@@ -253,9 +254,9 @@ func TestParser_Errors(t *testing.T) {
 			nodes: []Node{
 				&StructNode{
 					Poisoned: true,
-					Name:     "Data1",
+					Iden:     "Data1",
 					Fields: []*FieldNode{
-						{Modifier: Required, Name: "one", Ordered: Ordered{Ord: 1}, Type: TypeNode{Iden: "int128"}},
+						{Modifier: Required, Iden: "one", Ord: 1, Type: TypeNode{Iden: "int128"}},
 					},
 				},
 			},
@@ -277,14 +278,14 @@ func TestParser_Errors(t *testing.T) {
 			nodes: []Node{
 				&StructNode{
 					Poisoned: true,
-					Name:     "Data1",
+					Iden:     "Data1",
 					LocalDefs: []Node{
 						&UnionNode{
 							Poisoned: true,
 							Size:     16,
-							Name:     "Data2",
+							Iden:     "Data2",
 							LocalDefs: []Node{
-								&StructNode{Poisoned: true, Name: "Data3"},
+								&StructNode{Poisoned: true, Iden: "Data3"},
 							},
 						},
 					},
@@ -306,9 +307,9 @@ func TestParser_Errors(t *testing.T) {
 			}`,
 			nodes: []Node{
 				&StructNode{
-					Name: "Data",
+					Iden: "Data",
 					Fields: []*FieldNode{
-						{Modifier: Required, Name: "one", Ordered: Ordered{Ord: 1}, Type: TypeNode{Iden: "int128"}},
+						{Modifier: Required, Iden: "one", Ord: 1, Type: TypeNode{Iden: "int128"}},
 					},
 				},
 			},
@@ -331,16 +332,16 @@ func TestParser_Errors(t *testing.T) {
 			}`,
 			nodes: []Node{
 				&StructNode{
-					Name: "Data",
+					Iden: "Data",
 					Fields: []*FieldNode{
-						{Poisoned: true, Modifier: Required, Name: "one", Ordered: Ordered{Ord: 1}},
+						{Poisoned: true, Modifier: Required, Iden: "one", Ord: 1},
 					},
 				},
 				&StructNode{
-					Name:     "Data_1",
+					Iden:     "Data_1",
 					Poisoned: true,
 					Fields: []*FieldNode{
-						{Modifier: Required, Name: "one", Ordered: Ordered{Ord: 1}, Type: TypeNode{Iden: "int128"}},
+						{Modifier: Required, Iden: "one", Ord: 1, Type: TypeNode{Iden: "int128"}},
 					},
 				},
 			},
@@ -371,15 +372,15 @@ func TestParser_Errors(t *testing.T) {
 			nodes: []Node{
 				&StructNode{
 					Poisoned: true,
-					Name:     "Data1",
+					Iden:     "Data1",
 					Fields: []*FieldNode{
-						{Poisoned: true, Modifier: Required, Name: "one"},
+						{Poisoned: true, Modifier: Required, Iden: "one"},
 					},
 					LocalDefs: []Node{
 						&StructNode{
-							Name: "Data2",
+							Iden: "Data2",
 							Fields: []*FieldNode{
-								{Poisoned: true, Modifier: Required, Name: "one", Ordered: Ordered{Ord: 1}},
+								{Poisoned: true, Modifier: Required, Iden: "one", Ord: 1},
 							},
 						},
 					},
@@ -417,18 +418,18 @@ func TestParser_Errors(t *testing.T) {
 			}`,
 			nodes: []Node{
 				&StructNode{
-					Name: "Data3",
+					Iden: "Data3",
 					Fields: []*FieldNode{
-						{Poisoned: true, Modifier: Required, Name: "one", Ordered: Ordered{Ord: 1}},
+						{Poisoned: true, Modifier: Required, Iden: "one", Ord: 1},
 					},
 					LocalDefs: []Node{
 						&UnionNode{
 							Poisoned: true,
-							Name:     "Data4",
+							Iden:     "Data4",
 							Size:     16,
 							Options: []*OptionNode{
-								{Iden: "One", Ordered: Ordered{Ord: 1}},
-								{Poisoned: true, Ordered: Ordered{Ord: 2}},
+								{Iden: "One", Ord: 1},
+								{Poisoned: true, Ord: 2},
 							},
 						},
 					},
@@ -463,11 +464,11 @@ func TestParser_Errors(t *testing.T) {
 			nodes: []Node{
 				&EnumNode{
 					Poisoned: true,
-					Name:     "Data4",
+					Iden:     "Data4",
 					Size:     4,
 					Cases: []*CaseNode{
-						{Name: "ONE", Ordered: Ordered{Ord: 1}},
-						{Poisoned: true, Ordered: Ordered{Ord: 2}},
+						{Iden: "ONE", Ord: 1},
+						{Poisoned: true, Ord: 2},
 					},
 				},
 			},
@@ -495,10 +496,10 @@ func TestParser_Errors(t *testing.T) {
 			nodes: []Node{
 				&StructNode{
 					Poisoned: true,
-					Name:     "Data",
+					Iden:     "Data",
 					Fields: []*FieldNode{
-						{Poisoned: true, Modifier: Required, Name: "one"},
-						{Poisoned: true, Modifier: Required, Name: "three", Ordered: Ordered{Ord: 3}, Type: TypeNode{Iden: "int128"}},
+						{Poisoned: true, Modifier: Required, Iden: "one"},
+						{Poisoned: true, Modifier: Required, Iden: "three", Ord: 3, Type: TypeNode{Iden: "int128"}},
 					},
 				},
 			},
@@ -531,10 +532,10 @@ func TestParser_Errors(t *testing.T) {
 			nodes: []Node{
 				&ServiceNode{
 					Poisoned: true,
-					Name:     "Data",
+					Iden:     "Data",
 					Procedures: []*RpcNode{
-						{Poisoned: true, Name: "Hello", Ordered: Ordered{Ord: 1}, Arg: TypeNode{Iden: "Test"}},
-						{Poisoned: true, Name: "World", Ordered: Ordered{Ord: 2}, Arg: TypeNode{Iden: "Test1"}},
+						{Poisoned: true, Iden: "Hello", Ord: 1, Arg: TypeNode{Iden: "Test"}},
+						{Poisoned: true, Iden: "World", Ord: 2, Arg: TypeNode{Iden: "Test1"}},
 					},
 				},
 			},
