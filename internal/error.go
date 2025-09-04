@@ -47,7 +47,7 @@ func (err *ParseErr) token() Token {
 }
 
 func (err *ParseErr) addKind(kind NodeKind) {
-	if err.nodeKind == UnknownNodeKind {
+	if err.nodeKind == NoNodeKind {
 		err.nodeKind = kind
 	}
 }
@@ -61,7 +61,7 @@ func (err *ParseErr) Error() string {
 	var sb strings.Builder
 
 	// header
-	sb.WriteString(err.actual.Positions.Header())
+	sb.WriteString(err.actual.Positions.Offset())
 	sb.WriteRune(' ')
 
 	// text
@@ -95,7 +95,7 @@ func (err *ParseErr) Error() string {
 	sb.WriteString(err.actual.String())
 
 	// node
-	if err.nodeKind != UnknownNodeKind {
+	if err.nodeKind != NoNodeKind {
 		sb.WriteString(" while parsing ")
 		sb.WriteString(err.nodeKind.String())
 	}
@@ -122,40 +122,40 @@ const (
 )
 
 type TransformErr struct {
-	kind   TransformErrKind
-	node   Node
+	eKind  TransformErrKind
+	p      Positions
+	nKind  NodeKind
 	iden   string
 	expOrd uint64
 	gotOrd uint64
 }
 
-func makeRedefErr(node Node, iden string) error {
-	return &TransformErr{node: node, kind: RedefErrKind, iden: iden}
+func makeRedefErr(nKind NodeKind, p Positions, iden string) error {
+	return &TransformErr{eKind: RedefErrKind, p: p, nKind: nKind, iden: iden}
 }
 
-func makeUndefErr(node Node, iden string) error {
-	return &TransformErr{node: node, kind: UndefErrKind, iden: iden}
+func makeUndefErr(nKind NodeKind, p Positions, iden string) error {
+	return &TransformErr{eKind: UndefErrKind, p: p, nKind: nKind, iden: iden}
 }
 
-func makeOrdErr(node Node, expOrd uint64, gotOrd uint64) error {
-	return &TransformErr{node: node, kind: OrdErrKind, expOrd: expOrd, gotOrd: gotOrd}
+func makeOrdErr(nKind NodeKind, p Positions, expOrd uint64, gotOrd uint64) error {
+	return &TransformErr{eKind: OrdErrKind, p: p, nKind: nKind, expOrd: expOrd, gotOrd: gotOrd}
 }
 
 func (err *TransformErr) Error() string {
 	var sb strings.Builder
-	sb.WriteString(err.node.Header())
+	sb.WriteString(err.p.Offset())
 	sb.WriteRune(' ')
-	sb.WriteString(err.node.Kind().String())
+	sb.WriteString(err.nKind.String())
 	sb.WriteString(": ")
 
-	switch err.kind {
+	switch err.eKind {
 	case RedefErrKind:
 		sb.WriteString(fmt.Sprintf("\"%s\" is redefined", err.iden))
 	case UndefErrKind:
 		sb.WriteString(fmt.Sprintf("\"%s\" is undefined", err.iden))
 	case OrdErrKind:
 		sb.WriteString(fmt.Sprintf("order tag '@%d' should be '@%d'", err.gotOrd, err.expOrd))
-
 	}
 
 	return sb.String()

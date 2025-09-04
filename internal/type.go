@@ -7,7 +7,8 @@ import (
 )
 
 type Type struct {
-	TIden     string // transformed iden
+	Bits      int    // populated for bit-width integers intead of iden
+	Iden      string // populated for non-integer identifiers
 	Primitive bool
 }
 
@@ -29,7 +30,7 @@ func isPrimitive(iden string) bool {
 var IntSizes = []int{8, 16, 32, 64}
 
 func makeType(iden string) Type {
-	t := Type{TIden: iden, Primitive: isPrimitive(iden)}
+	t := Type{Iden: iden, Primitive: isPrimitive(iden)}
 
 	index := strings.Index(iden, "int")
 	if index < 0 {
@@ -43,35 +44,20 @@ func makeType(iden string) Type {
 		return t
 	}
 
-	t = Type{Primitive: true}
-
-	// map to a fix sized primitive, or a big integer if that is not possible
-	for _, size := range IntSizes {
-		if bits <= size {
-			t.TIden = fmt.Sprintf("int%d", size)
-			break
-		}
-	}
-	if t.TIden != "" {
-		t.TIden = "big.Int"
-	}
-
+	t = Type{Primitive: true, Bits: bits}
 	return t
 }
 
-type TypeTable struct {
-	prev *TypeTable
-	m    map[string]Node
-}
-
-func (t *TypeTable) resolve(iden string) Node {
-	table := t
-	for table != nil {
-		node, ok := table.m[iden]
-		if ok {
-			return node
-		}
-		table = table.prev
+func (t Type) Native() string {
+	if t.Iden != "" {
+		return t.Iden
 	}
-	return nil
+
+	// map to a fix sized primitive, or a big integer if that is not possible
+	for _, size := range IntSizes {
+		if t.Bits <= size {
+			return fmt.Sprintf("int%d", size)
+		}
+	}
+	return "big.Int"
 }

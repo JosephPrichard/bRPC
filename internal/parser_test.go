@@ -20,12 +20,12 @@ func TestParser_Properties(t *testing.T) {
 	nodes := runParser(input, &errs)
 	ClearNodeList(nodes)
 
-	t.Logf("\n%s\n", StringifyAst(nodes))
+	t.Logf("\n%s\n", WriteAst(nodes))
 
-	expectedNodes := []Node{
-		&ImportNode{Path: "/services/schemas/animals"},
-		&PropertyNode{Iden: "package", Value: "/hello/\\\"world\""},
-		&PropertyNode{Iden: "constant", Value: "Value"},
+	expectedNodes := []DefNode{
+		{Kind: ImportNodeKind, Value: "/services/schemas/animals"},
+		{Kind: PropertyNodeKind, Iden: "package", Value: "/hello/\\\"world\""},
+		{Kind: PropertyNodeKind, Iden: "constant", Value: "Value"},
 	}
 
 	assert.Equal(t, expectedNodes, nodes)
@@ -54,45 +54,33 @@ func TestParser_Struct(t *testing.T) {
 	nodes := runParser(input, &errs)
 	ClearNodeList(nodes)
 
-	t.Logf("\n%s\n", StringifyAst(nodes))
+	t.Logf("\n%s\n", WriteAst(nodes))
 
-	expectedNodes := []Node{
-		&StructNode{
+	expectedNodes := []DefNode{
+		{
+			Kind: StructNodeKind,
 			Iden: "Data1",
-			Fields: []*FieldNode{
-				{Modifier: Required, Iden: "one", Ord: 1, Type: TypeNode{Iden: "int128"}},
-				{
-					Modifier: Required,
-					Iden:     "two",
-					Ord:      2,
-					Type:     TypeNode{Iden: "int5", Array: []uint64{0}},
-				},
-				{
-					Modifier: Optional,
-					Iden:     "three",
-					Ord:      3,
-					Type:     TypeNode{Iden: "int4", Array: []uint64{16}},
-				},
-				{
-					Modifier: Optional,
-					Iden:     "four",
-					Ord:      4,
-					Type:     TypeNode{Iden: "int4", Array: []uint64{0, 4, 0}},
-				},
+			Members: []MembNode{
+				{Modifier: Required, Iden: "one", Ord: 1, LType: TypeNode{Iden: "int128"}},
+				{Modifier: Required, Iden: "two", Ord: 2, LType: TypeNode{Iden: "int5", Array: []uint64{0}}},
+				{Modifier: Optional, Iden: "three", Ord: 3, LType: TypeNode{Iden: "int4", Array: []uint64{16}}},
+				{Modifier: Optional, Iden: "four", Ord: 4, LType: TypeNode{Iden: "int4", Array: []uint64{0, 4, 0}}},
 			},
-			LocalDefs: []Node{
-				&StructNode{
+			LocalDefs: []DefNode{
+				{
+					Kind: StructNodeKind,
 					Iden: "Data2",
-					Fields: []*FieldNode{
-						{Modifier: Required, Iden: "one", Ord: 1, Type: TypeNode{Iden: "Data3"}},
+					Members: []MembNode{
+						{Modifier: Required, Iden: "one", Ord: 1, LType: TypeNode{Iden: "Data3"}},
 					},
-					LocalDefs: []Node{
-						&StructNode{
+					LocalDefs: []DefNode{
+						{
+							Kind:       StructNodeKind,
 							Iden:       "Data3",
 							TypeParams: []string{"A", "B"},
-							Fields: []*FieldNode{
-								{Modifier: Deprecated, Iden: "one", Ord: 1, Type: TypeNode{Iden: "A"}},
-								{Modifier: Required, Iden: "two", Ord: 2, Type: TypeNode{Iden: "B"}},
+							Members: []MembNode{
+								{Modifier: Deprecated, Iden: "one", Ord: 1, LType: TypeNode{Iden: "A"}},
+								{Modifier: Required, Iden: "two", Ord: 2, LType: TypeNode{Iden: "B"}},
 							},
 						},
 					},
@@ -117,13 +105,14 @@ func TestParser_Enum(t *testing.T) {
 	nodes := runParser(input, &errs)
 	ClearNodeList(nodes)
 
-	t.Logf("\n%s\n", StringifyAst(nodes))
+	t.Logf("\n%s\n", WriteAst(nodes))
 
-	expectedNodes := []Node{
-		&EnumNode{
+	expectedNodes := []DefNode{
+		{
+			Kind: EnumNodeKind,
 			Iden: "Data1",
 			Size: 16,
-			Cases: []*CaseNode{
+			Members: []MembNode{
 				{Ord: 1, Iden: "One"},
 				{Ord: 2, Iden: "Two"},
 				{Ord: 3, Iden: "Three"},
@@ -138,13 +127,13 @@ func TestParser_Enum(t *testing.T) {
 func TestParser_Union(t *testing.T) {
 	input := `
 	message Data [8]union(A, B, C) {
-		@1 Data2;
-		@2 Data1;
-		@3 Data;;
+		one @1 Data2;
+		two @2 Data1;
+		three @3 []Data;;
 
 		message Data union { 
-			@1 B;
-			@2 C;
+			one @1 B;
+			two @2 C;
         }
 	}
 	`
@@ -152,25 +141,27 @@ func TestParser_Union(t *testing.T) {
 	nodes := runParser(input, &errs)
 	ClearNodeList(nodes)
 
-	t.Logf("\n%s\n", StringifyAst(nodes))
+	t.Logf("\n%s\n", WriteAst(nodes))
 
-	expectedNodes := []Node{
-		&UnionNode{
+	expectedNodes := []DefNode{
+		{
+			Kind:       UnionNodeKind,
 			Iden:       "Data",
 			Size:       8,
 			TypeParams: []string{"A", "B", "C"},
-			Options: []*OptionNode{
-				{Ord: 1, Iden: "Data2"},
-				{Ord: 2, Iden: "Data1"},
-				{Ord: 3, Iden: "Data"},
+			Members: []MembNode{
+				{Ord: 1, Iden: "one", LType: TypeNode{Iden: "Data2"}},
+				{Ord: 2, Iden: "two", LType: TypeNode{Iden: "Data1"}},
+				{Ord: 3, Iden: "three", LType: TypeNode{Iden: "Data", Array: []uint64{0}}},
 			},
-			LocalDefs: []Node{
-				&UnionNode{
+			LocalDefs: []DefNode{
+				{
+					Kind: UnionNodeKind,
 					Iden: "Data",
 					Size: 16,
-					Options: []*OptionNode{
-						{Ord: 1, Iden: "B"},
-						{Ord: 2, Iden: "C"},
+					Members: []MembNode{
+						{Ord: 1, Iden: "one", LType: TypeNode{Iden: "B"}},
+						{Ord: 2, Iden: "two", LType: TypeNode{Iden: "C"}},
 					},
 				},
 			},
@@ -196,36 +187,27 @@ func TestParser_Service(t *testing.T) {
 	nodes := runParser(input, &errs)
 	ClearNodeList(nodes)
 
-	t.Logf("\n%s\n", StringifyAst(nodes))
+	t.Logf("\n%s\n", WriteAst(nodes))
 
-	expectedNodes := []Node{
-		&ServiceNode{
+	expectedNodes := []DefNode{
+		{
+			Kind: ServiceNodeKind,
 			Iden: "ServiceA",
-			Procedures: []*RpcNode{
+			Members: []MembNode{
+				{Ord: 1, Iden: "Hello", LType: TypeNode{Iden: "Test"}, RType: TypeNode{Iden: "Output"}},
 				{
-					Ord:  1,
-					Iden: "Hello",
-					Arg:  TypeNode{Iden: "Test"},
-					Ret:  TypeNode{Iden: "Output"},
-				},
-				{
-					Ord:  2,
-					Iden: "World",
-					Arg: TypeNode{
-						Iden:     "Test1",
-						TypeArgs: []TypeNode{{Iden: "Arg1"}, {Iden: "Arg2"}, {Iden: "Arg3"}},
-					},
-					Ret: TypeNode{
-						Iden:     "Output1",
-						TypeArgs: []TypeNode{{Iden: "Arg1"}, {Iden: "Arg2"}},
-					},
+					Ord:   2,
+					Iden:  "World",
+					LType: TypeNode{Iden: "Test1", TypeArgs: []TypeNode{{Iden: "Arg1"}, {Iden: "Arg2"}, {Iden: "Arg3"}}},
+					RType: TypeNode{Iden: "Output1", TypeArgs: []TypeNode{{Iden: "Arg1"}, {Iden: "Arg2"}}},
 				},
 			},
-			LocalDefs: []Node{
-				&StructNode{
+			LocalDefs: []DefNode{
+				{
+					Kind: StructNodeKind,
 					Iden: "Test",
-					Fields: []*FieldNode{
-						{Modifier: Required, Iden: "one", Ord: 1, Type: TypeNode{Iden: "b24"}},
+					Members: []MembNode{
+						{Modifier: Required, Iden: "one", Ord: 1, LType: TypeNode{Iden: "b24"}},
 					},
 				},
 			},
@@ -240,23 +222,21 @@ func TestParser_Errors(t *testing.T) {
 	type Test struct {
 		name  string
 		input string
-		nodes []Node
+		nodes []DefNode
 		errs  []error
 	}
 
 	tests := []Test{
 		{
-			name: "UnclosedStruct",
-			input: `
-			message Data1 struct {
-				required one @1 int128;
-			`,
-			nodes: []Node{
-				&StructNode{
+			name:  "UnclosedStruct",
+			input: `message Data1 struct { required one @1 int128;`,
+			nodes: []DefNode{
+				{
+					Kind:     StructNodeKind,
 					Poisoned: true,
 					Iden:     "Data1",
-					Fields: []*FieldNode{
-						{Modifier: Required, Iden: "one", Ord: 1, Type: TypeNode{Iden: "int128"}},
+					Members: []MembNode{
+						{Modifier: Required, Iden: "one", Ord: 1, LType: TypeNode{Iden: "int128"}},
 					},
 				},
 			},
@@ -269,23 +249,21 @@ func TestParser_Errors(t *testing.T) {
 			},
 		},
 		{
-			name: "UnclosedNestedStruct",
-			input: `
-			message Data1 struct {
-				message Data2 union {
-					message Data3 struct {
-			`,
-			nodes: []Node{
-				&StructNode{
+			name:  "UnclosedNestedStruct",
+			input: `message Data1 struct { message Data2 union { message Data3 struct {`,
+			nodes: []DefNode{
+				{
+					Kind:     StructNodeKind,
 					Poisoned: true,
 					Iden:     "Data1",
-					LocalDefs: []Node{
-						&UnionNode{
+					LocalDefs: []DefNode{
+						{
+							Kind:     UnionNodeKind,
 							Poisoned: true,
 							Size:     16,
 							Iden:     "Data2",
-							LocalDefs: []Node{
-								&StructNode{Poisoned: true, Iden: "Data3"},
+							LocalDefs: []DefNode{
+								{Kind: StructNodeKind, Poisoned: true, Iden: "Data3"},
 							},
 						},
 					},
@@ -300,16 +278,14 @@ func TestParser_Errors(t *testing.T) {
 			},
 		},
 		{
-			name: "InvalidMessageSize",
-			input: `
-			message Data [5]struct {
-				required one @1 int128;
-			}`,
-			nodes: []Node{
-				&StructNode{
+			name:  "InvalidMessageSize",
+			input: `message Data [5]struct { required one @1 int128; }`,
+			nodes: []DefNode{
+				{
+					Kind: StructNodeKind,
 					Iden: "Data",
-					Fields: []*FieldNode{
-						{Modifier: Required, Iden: "one", Ord: 1, Type: TypeNode{Iden: "int128"}},
+					Members: []MembNode{
+						{Modifier: Required, Iden: "one", Ord: 1, LType: TypeNode{Iden: "int128"}},
 					},
 				},
 			},
@@ -322,26 +298,22 @@ func TestParser_Errors(t *testing.T) {
 			},
 		},
 		{
-			name: "InvalidStruct",
-			input: `
-			message Data struct {
-				required one @1 [5a]int128;
-			}
-			message Data_1 struct {
-				required one @1 int128;
-			}`,
-			nodes: []Node{
-				&StructNode{
+			name:  "InvalidStruct",
+			input: `message Data struct { required one @1 [5a]int128; } message Data_1 struct { required one @1 int128; }`,
+			nodes: []DefNode{
+				{
+					Kind: StructNodeKind,
 					Iden: "Data",
-					Fields: []*FieldNode{
+					Members: []MembNode{
 						{Poisoned: true, Modifier: Required, Iden: "one", Ord: 1},
 					},
 				},
-				&StructNode{
+				{
+					Kind:     StructNodeKind,
 					Iden:     "Data_1",
 					Poisoned: true,
-					Fields: []*FieldNode{
-						{Modifier: Required, Iden: "one", Ord: 1, Type: TypeNode{Iden: "int128"}},
+					Members: []MembNode{
+						{Modifier: Required, Iden: "one", Ord: 1, LType: TypeNode{Iden: "int128"}},
 					},
 				},
 			},
@@ -359,27 +331,21 @@ func TestParser_Errors(t *testing.T) {
 			},
 		},
 		{
-			name: "InvalidFields",
-			input: `
-			message Data1 struct {
-				required one @1abc int128;
-				two @2abc []int5;
-		
-				message Data2 struct {
-					required one @1;
-				}
-			}`,
-			nodes: []Node{
-				&StructNode{
+			name:  "InvalidFields",
+			input: `message Data1 struct { required one @1abc int128; two @2abc []int5; message Data2 struct { required one @1; } }`,
+			nodes: []DefNode{
+				{
+					Kind:     StructNodeKind,
 					Poisoned: true,
 					Iden:     "Data1",
-					Fields: []*FieldNode{
+					Members: []MembNode{
 						{Poisoned: true, Modifier: Required, Iden: "one"},
 					},
-					LocalDefs: []Node{
-						&StructNode{
+					LocalDefs: []DefNode{
+						{
+							Kind: StructNodeKind,
 							Iden: "Data2",
-							Fields: []*FieldNode{
+							Members: []MembNode{
 								{Poisoned: true, Modifier: Required, Iden: "one", Ord: 1},
 							},
 						},
@@ -405,29 +371,22 @@ func TestParser_Errors(t *testing.T) {
 			},
 		},
 		{
-			name: "InvalidUnion",
-			input: `
-			message Data3 struct {
-				required one @1;
-		
-				message Data4 union {
-					@1 One;
-					@2 5;
-					Two;
-				}
-			}`,
-			nodes: []Node{
-				&StructNode{
+			name:  "InvalidUnion",
+			input: `message Data3 struct { required one @1; message Data4 union { @1 One; @2 5; Two; } }`,
+			nodes: []DefNode{
+				{
+					Kind: StructNodeKind,
 					Iden: "Data3",
-					Fields: []*FieldNode{
+					Members: []MembNode{
 						{Poisoned: true, Modifier: Required, Iden: "one", Ord: 1},
 					},
-					LocalDefs: []Node{
-						&UnionNode{
+					LocalDefs: []DefNode{
+						{
+							Kind:     UnionNodeKind,
 							Poisoned: true,
 							Iden:     "Data4",
 							Size:     16,
-							Options: []*OptionNode{
+							Members: []MembNode{
 								{Iden: "One", Ord: 1},
 								{Poisoned: true, Ord: 2},
 							},
@@ -454,19 +413,15 @@ func TestParser_Errors(t *testing.T) {
 			},
 		},
 		{
-			name: "InvalidEnum",
-			input: `
-			message Data4 [4]enum {
-				@1 ONE;
-				@2 2 TWO;
-				THREE;
-			}`,
-			nodes: []Node{
-				&EnumNode{
+			name:  "InvalidEnum",
+			input: `message Data4 [4]enum { @1 ONE; @2 2 TWO; THREE; }`,
+			nodes: []DefNode{
+				{
+					Kind:     EnumNodeKind,
 					Poisoned: true,
 					Iden:     "Data4",
 					Size:     4,
-					Cases: []*CaseNode{
+					Members: []MembNode{
 						{Iden: "ONE", Ord: 1},
 						{Poisoned: true, Ord: 2},
 					},
@@ -486,20 +441,16 @@ func TestParser_Errors(t *testing.T) {
 			},
 		},
 		{
-			name: "DuplicatedIdentifiers",
-			input: `
-			message Data struct {
-				required one one one one one @1 int128;
-				two two two two two @2 []int5;
-				required three @3 int128
-			}`,
-			nodes: []Node{
-				&StructNode{
+			name:  "DuplicatedIdentifiers",
+			input: `message Data struct { required one one one one one @1 int128; two two two two two @2 []int5; required three @3 int128 }`,
+			nodes: []DefNode{
+				{
+					Kind:     StructNodeKind,
 					Poisoned: true,
 					Iden:     "Data",
-					Fields: []*FieldNode{
+					Members: []MembNode{
 						{Poisoned: true, Modifier: Required, Iden: "one"},
-						{Poisoned: true, Modifier: Required, Iden: "three", Ord: 3, Type: TypeNode{Iden: "int128"}},
+						{Poisoned: true, Modifier: Required, Iden: "three", Ord: 3, LType: TypeNode{Iden: "int128"}},
 					},
 				},
 			},
@@ -522,20 +473,16 @@ func TestParser_Errors(t *testing.T) {
 			},
 		},
 		{
-			name: "InvalidRpc",
-			input: `
-			service Data {
-				rpc @1 Hello(Test) (Output)
-				required one @1 int128;
-				rpc @2 World(Test1) returns ()
-			}`,
-			nodes: []Node{
-				&ServiceNode{
+			name:  "InvalidRpc",
+			input: `service Data { rpc @1 Hello(Test) (Output) required one @1 int128; rpc @2 World(Test1) returns () }`,
+			nodes: []DefNode{
+				{
+					Kind:     ServiceNodeKind,
 					Poisoned: true,
 					Iden:     "Data",
-					Procedures: []*RpcNode{
-						{Poisoned: true, Iden: "Hello", Ord: 1, Arg: TypeNode{Iden: "Test"}},
-						{Poisoned: true, Iden: "World", Ord: 2, Arg: TypeNode{Iden: "Test1"}},
+					Members: []MembNode{
+						{Poisoned: true, Iden: "Hello", Ord: 1, LType: TypeNode{Iden: "Test"}},
+						{Poisoned: true, Iden: "World", Ord: 2, LType: TypeNode{Iden: "Test1"}},
 					},
 				},
 			},
@@ -565,9 +512,7 @@ func TestParser_Errors(t *testing.T) {
 			nodes := runParser(test.input, &errs)
 			ClearNodeList(nodes)
 
-			printLine := func(err string) {
-				t.Log(err)
-			}
+			printLine := func(err string) { t.Log(err) }
 			printErrors(errs, "test", printLine)
 			clearErrors(errs)
 
@@ -578,17 +523,12 @@ func TestParser_Errors(t *testing.T) {
 }
 
 func TestParser_Garbage(t *testing.T) {
-	input := `
-	hello world service struct field}
-	lorem; ipsum 5a{ test 123 go there
-	`
-
+	input := `hello world service struct field} lorem; ipsum 5a{ test 123 go there`
 	done := make(chan struct{})
 
 	go func() {
 		var errs []error
 		_ = runParser(input, &errs)
-		// we throw away asts and don't do anything with the errs - just check that this terminates
 		close(done)
 	}()
 

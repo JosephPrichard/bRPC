@@ -4,14 +4,8 @@ import (
 	"slices"
 )
 
-type PropTable = map[string]string
-
-type ImportTable = map[string]Node
-
 type Transformer struct {
-	propTable   PropTable
-	importTable ImportTable
-	errs        *[]error
+	errs *[]error
 }
 
 func makeTransformer(errs *[]error) Transformer {
@@ -22,158 +16,113 @@ func (t *Transformer) emitError(err error) {
 	*t.errs = append(*t.errs, err)
 }
 
-func (t *Transformer) makePropTable(nodes []Node) {
-	t.propTable = make(PropTable)
-	for _, n := range nodes {
-		node, ok := n.(*PropertyNode)
-		if !ok {
+func (t *Transformer) transformNodeList(nodes []DefNode, prev *TypeTable) {
+	table := makeTypeTable(prev)
+	for i := range nodes {
+		node := &nodes[i]
+		if node.Kind != StructNodeKind && node.Kind != UnionNodeKind && node.Kind != EnumNodeKind && node.Kind != ServiceNodeKind {
 			continue
 		}
-		if !node.Poisoned {
-			t.propTable[node.Iden] = node.Value
+
+		if err := table.insert(node.Iden, node); err != nil {
+			t.emitError(err)
 		}
+		node.TypeTable = table
+
+		mKind := node.MemberKind()
+		for i := range node.Members {
+			node := &node.Members[i]
+			switch mKind {
+			case FieldNodeKind, OptionNodeKind:
+				node.LType.Value = makeType(node.LType.Iden)
+			case RpcNodeKind:
+				node.LType.Value = makeType(node.LType.Iden)
+				node.RType.Value = makeType(node.RType.Iden)
+			}
+		}
+
+		t.transformNodeList(node.LocalDefs, table)
 	}
 }
 
-func (t *Transformer) transformTypes(nodes []Node, prev *TypeTable) {
-	table := &TypeTable{m: make(map[string]Node), prev: prev}
-
-	insertTable := func(iden string, node Node) {
-		if _, exists := table.m[iden]; exists {
-			t.emitError(makeRedefErr(node, iden))
-			return
-		}
-		table.m[iden] = node
-	}
-
-	makeFieldTypes := func(node *StructNode) {
-		for _, field := range node.Fields {
-			field.Type.Type = makeType(field.Type.Iden)
-		}
-	}
-
-	makeUnionTypes := func(node *UnionNode) {
-		for _, option := range node.Options {
-			option.Type = makeType(option.Iden)
-		}
-	}
-
-	makeSvcTypes := func(node *ServiceNode) {
-		for _, proc := range node.Procedures {
-			proc.Arg.Type = makeType(proc.Arg.Iden)
-			proc.Ret.Type = makeType(proc.Ret.Iden)
-		}
-	}
-
-	for _, n := range nodes {
-		switch node := n.(type) {
-		case *StructNode:
-			node.TypeTable = table
-			makeFieldTypes(node)
-			insertTable(node.Iden, node)
-			t.transformTypes(node.LocalDefs, table)
-		case *UnionNode:
-			node.TypeTable = table
-			insertTable(node.Iden, node)
-			makeUnionTypes(node)
-			t.transformTypes(node.LocalDefs, table)
-		case *EnumNode:
-			node.TypeTable = table
-			insertTable(node.Iden, node)
-		case *ServiceNode:
-			node.TypeTable = table
-			insertTable(node.Iden, node)
-			makeSvcTypes(node)
-			t.transformTypes(node.LocalDefs, table)
-		}
-	}
+func sortMembers(fields []MembNode) {
+	slices.SortFunc(fields, func(n1, n2 MembNode) int { return int(n1.Ord - n2.Ord) })
 }
 
-func sortFields(fields []*FieldNode) {
-	slices.SortFunc(fields, func(n1, n2 *FieldNode) int { return int(n1.Ord - n2.Ord) })
-}
-
-func sortOptions(options []*OptionNode) {
-	slices.SortFunc(options, func(n1, n2 *OptionNode) int { return int(n1.Ord - n2.Ord) })
-}
-
-func sortCases(cases []*CaseNode) {
-	slices.SortFunc(cases, func(n1, n2 *CaseNode) int { return int(n1.Ord - n2.Ord) })
-}
-
-func sortProcedures(procs []*RpcNode) {
-	slices.SortFunc(procs, func(n1, n2 *RpcNode) int { return int(n1.Ord - n2.Ord) })
-}
-
-func checkNodeOrder[M Member](nodes []M, f func(error)) {
+func (t *Transformer) checkMemberOrder(kind NodeKind, nodes []MembNode) {
 	expOrd := uint64(1)
 	for _, node := range nodes {
-		ord := node.Order()
-		var err error
-		if ord != expOrd {
-			err = makeOrdErr(node, expOrd, ord)
+		ord := node.Ord
+		if ord == expOrd {
+			expOrd++
+			continue
 		}
-		if err != nil {
-			f(err)
+		err := makeOrdErr(kind, node.Positions, expOrd, ord)
+		t.emitError(err)
+		break
+	}
+}
+
+func (t *Transformer) checkDupMembers(kind NodeKind, nodes []MembNode) {
+	for i, node := range nodes {
+		name := node.Iden
+		for j := i - 1; j >= 0; j-- {
+			leftName := nodes[j].Iden
+			if name != leftName {
+				continue
+			}
+			err := makeRedefErr(kind, node.Positions, name)
+			t.emitError(err)
 			break
 		}
-		expOrd++
 	}
 }
 
-func checkDupNodes[M Member](nodes []M, f func(error)) {
-	for i, node := range nodes {
-		for j := i - 1; j >= 0; j-- {
-			n := nodes[j]
-			if node.Name() == n.Name() {
-				f(makeRedefErr(node, node.Name()))
-				break
-			}
-		}
+func (t *Transformer) checkMemberTypes(kind NodeKind, nodes []MembNode, table *TypeTable) {
+	if table == nil {
+		return
 	}
-}
-
-func checkNodeTypes[M TypedMember](table *TypeTable, nodes []M, f func(error)) {
 	for _, node := range nodes {
-		visitType := func(typ Type) {
-			if typ.Primitive {
+		checkType := func(typeVal Type) {
+			if typeVal.Primitive {
 				return
 			}
-			refNode := table.resolve(typ.TIden)
+			refNode := table.resolve(typeVal.Iden)
 			if refNode == nil {
-				f(makeUndefErr(node, typ.TIden))
+				err := makeUndefErr(kind, node.Positions, typeVal.Iden)
+				t.emitError(err)
 				return
 			}
 		}
-		node.Types(visitType)
+		switch kind {
+		case FieldNodeKind, OptionNodeKind:
+			checkType(node.LType.Value)
+		case RpcNodeKind:
+			checkType(node.LType.Value)
+			checkType(node.RType.Value)
+		}
 	}
 }
 
-func (t *Transformer) validateTypes(nodes []Node) {
-	for _, n := range nodes {
-		switch node := n.(type) {
-		case *StructNode:
-			sortFields(node.Fields)
-			checkNodeOrder(node.Fields, t.emitError)
-			checkDupNodes(node.Fields, t.emitError)
-			checkNodeTypes(node.TypeTable, node.Fields, t.emitError)
-			t.validateTypes(node.LocalDefs)
-		case *UnionNode:
-			sortOptions(node.Options)
-			checkNodeOrder(node.Options, t.emitError)
-			checkDupNodes(node.Options, t.emitError)
-			checkNodeTypes(node.TypeTable, node.Options, t.emitError)
-			t.validateTypes(node.LocalDefs)
-		case *EnumNode:
-			sortCases(node.Cases)
-			checkNodeOrder(node.Cases, t.emitError)
-			checkDupNodes(node.Cases, t.emitError)
-		case *ServiceNode:
-			sortProcedures(node.Procedures)
-			checkNodeOrder(node.Procedures, t.emitError)
-			checkDupNodes(node.Procedures, t.emitError)
-			checkNodeTypes(node.TypeTable, node.Procedures, t.emitError)
-			t.validateTypes(node.LocalDefs)
+func (t *Transformer) validateNodeList(nodes []DefNode) {
+	for i := range nodes {
+		node := &nodes[i]
+		if node.Kind != StructNodeKind && node.Kind != UnionNodeKind && node.Kind != EnumNodeKind && node.Kind != ServiceNodeKind {
+			// skip non definition nodes (import and property)
+			continue
 		}
+
+		mKind := node.MemberKind()
+		sortMembers(node.Members)
+		t.checkMemberOrder(mKind, node.Members)
+		t.checkDupMembers(mKind, node.Members)
+
+		if node.Kind != EnumNodeKind {
+			// enum nodes will never have LocalDefs or non-nil Type
+			continue
+		}
+
+		t.checkMemberTypes(mKind, node.Members, node.TypeTable)
+		t.validateNodeList(node.LocalDefs)
 	}
 }

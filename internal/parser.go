@@ -11,7 +11,7 @@ import (
 type Parser struct {
 	tokens    []Token
 	curr      int
-	nodes     []Node
+	nodes     []DefNode
 	errs      *[]error
 	hasEofErr bool // stores whether an error has been emitted after token stream has reached eof
 }
@@ -20,7 +20,7 @@ func makeParser(tokens []Token, errs *[]error) Parser {
 	return Parser{tokens: tokens, hasEofErr: false, errs: errs}
 }
 
-func runParser(program string, errs *[]error) []Node {
+func runParser(program string, errs *[]error) []DefNode {
 	lex := makeLexer(program)
 	lex.run()
 
@@ -129,20 +129,18 @@ func (p *Parser) parse() {
 			p.emitError(err)
 			p.skipUntilSentinel()
 		}
-		if root != nil {
-			p.nodes = append(p.nodes, root)
-		}
+		p.nodes = append(p.nodes, root)
 	}
 }
 
-func (p *Parser) parseRoot() (Node, error) {
-	var node Node
+func (p *Parser) parseRoot() (DefNode, error) {
+	var node DefNode
 	var err error
 
 	token := p.peek()
 	switch token.Kind {
 	case TokEof:
-		return nil, ErrEof
+		return DefNode{}, ErrEof
 	case TokMessage:
 		p.eat()
 		node, err = p.parseMessage()
@@ -160,16 +158,16 @@ func (p *Parser) parseRoot() (Node, error) {
 	return node, err
 }
 
-func (p *Parser) parseProperty() Node {
-	var prop PropertyNode
+func (p *Parser) parseProperty() DefNode {
+	prop := DefNode{Kind: PropertyNodeKind}
 
-	forwardErr := func(err ParserError) Node {
+	forwardErr := func(err ParserError) DefNode {
 		prop.E = err.token().E
 		prop.Poisoned = true
 		err.addKind(PropertyNodeKind)
 		p.skipUntilSentinel()
 		p.emitError(err)
-		return &prop
+		return prop
 	}
 
 	var token Token
@@ -192,7 +190,7 @@ func (p *Parser) parseProperty() Node {
 	prop.E = token.E
 	prop.Value = str
 
-	return &prop
+	return prop
 }
 
 var escSeqTable = map[rune]rune{'\\': '\\', 'n': '\n', '\t': '\t', 'f': '\f', 'r': '\r', '"': '"'}
@@ -233,16 +231,16 @@ func (p *Parser) parseString(token *Token) (string, ParserError) {
 	return sb.String(), nil
 }
 
-func (p *Parser) parseImport() Node {
-	var imp ImportNode
+func (p *Parser) parseImport() DefNode {
+	imp := DefNode{Kind: ImportNodeKind}
 
-	forwardErr := func(err ParserError) Node {
+	forwardErr := func(err ParserError) DefNode {
 		imp.E = err.token().E
 		imp.Poisoned = true
 		err.addKind(ImportNodeKind)
 		p.skipUntilSentinel()
 		p.emitError(err)
-		return &imp
+		return imp
 	}
 
 	var token Token
@@ -258,9 +256,9 @@ func (p *Parser) parseImport() Node {
 		return forwardErr(err)
 	}
 	imp.E = token.E
-	imp.Path = pathStr
+	imp.Value = pathStr
 
-	return &imp
+	return imp
 }
 
 const DefaultMSize = 16
@@ -300,7 +298,7 @@ func validateMsgName(name string) bool {
 	return true
 }
 
-func (p *Parser) parseMessage() (Node, ParserError) {
+func (p *Parser) parseMessage() (DefNode, ParserError) {
 	var token Token
 	var err ParserError
 
@@ -309,7 +307,7 @@ func (p *Parser) parseMessage() (Node, ParserError) {
 	// invariant: assume that 'errKind' token has been consumed
 	token, err = p.expect(TokIden)
 	if err != nil {
-		return nil, err.withKind(kind)
+		return DefNode{}, err.withKind(kind)
 	}
 	name := token.Value
 	nameOk := validateMsgName(name)
@@ -319,10 +317,10 @@ func (p *Parser) parseMessage() (Node, ParserError) {
 
 	size, err := p.parseMessageSize(kind)
 	if err != nil {
-		return nil, err.withKind(kind)
+		return DefNode{}, err.withKind(kind)
 	}
 
-	var node Node
+	var node DefNode
 
 	token = p.peek()
 	switch token.Kind {
@@ -338,6 +336,308 @@ func (p *Parser) parseMessage() (Node, ParserError) {
 	}
 
 	return node, err
+}
+
+func (p *Parser) parseStruct(name string, nameOk bool) DefNode {
+	strct := DefNode{Kind: StructNodeKind, Iden: name}
+	strct.Poisoned = !nameOk
+
+	forwardErr := func(err ParserError) {
+		strct.E = err.token().E
+		strct.Poisoned = true
+		err.addKind(StructNodeKind)
+		p.skipUntilSentinel()
+		p.emitError(err)
+	}
+
+	token, err := p.expect(TokStruct)
+	if err != nil {
+		panic(fmt.Sprintf("assertion error: in struct: %s", err))
+	}
+	strct.B = token.B
+
+	typeParams, err := p.parseTypeParams()
+	if err != nil {
+		forwardErr(err)
+		return strct
+	}
+	strct.TypeParams = typeParams
+
+	if _, err := p.expect(TokLBrace); err != nil {
+		forwardErr(err)
+		return strct
+	}
+
+	for {
+		token := p.next()
+		switch token.Kind {
+		case TokOptional, TokRequired, TokDeprecated:
+			p.prev()
+			field := p.parseField()
+			strct.Members = append(strct.Members, field)
+		case TokMessage:
+			message, err := p.parseMessage()
+			if err != nil {
+				forwardErr(err)
+				continue
+			}
+			strct.LocalDefs = append(strct.LocalDefs, message)
+		case TokRBrace:
+			strct.E = token.E
+			return strct
+		default:
+			forwardErr(makeExpectErr(token, TokField, TokMessage, TokRBrace))
+			if token.Kind == TokEof {
+				return strct
+			}
+		}
+	}
+}
+
+func (p *Parser) parseField() MembNode {
+	field := MembNode{}
+
+	forwardErr := func(err ParserError) MembNode {
+		field.E = err.token().E
+		field.Poisoned = true
+		err.addKind(FieldNodeKind)
+		p.skipUntilSentinel()
+		p.emitError(err)
+		return field
+	}
+
+	var token Token
+	var err ParserError
+	var ord uint64
+
+	token = p.next()
+	field.B = token.B
+
+	switch token.Kind {
+	case TokRequired:
+		field.Modifier = Required
+	case TokOptional:
+		field.Modifier = Optional
+	case TokDeprecated:
+		field.Modifier = Deprecated
+	default:
+		return forwardErr(makeExpectErr(token, TokRequired, TokOptional, TokDeprecated))
+	}
+
+	if token, err = p.expect(TokIden); err != nil {
+		return forwardErr(err)
+	}
+	field.Iden = token.Value
+
+	if ord, err = p.parseOrd(); err != nil {
+		return forwardErr(err)
+	}
+	field.Ord = ord
+
+	typ, err := p.parseType()
+	if err != nil {
+		return forwardErr(err)
+	}
+	field.LType = typ
+
+	firstToken, ok := p.eatWhile(TokSemicolon)
+	if !ok {
+		return forwardErr(makeExpectErr(firstToken, TokSemicolon))
+	}
+	field.E = firstToken.E
+
+	return field
+}
+
+func (p *Parser) parseUnion(name string, nameOk bool, size uint64) DefNode {
+	union := DefNode{Kind: UnionNodeKind, Iden: name, Size: size}
+	union.Poisoned = !nameOk
+
+	forwardErr := func(err ParserError) {
+		union.E = err.token().E
+		union.Poisoned = true
+		err.addKind(UnionNodeKind)
+		p.skipUntilSentinel()
+		p.emitError(err)
+	}
+
+	token, err := p.expect(TokUnion)
+	if err != nil {
+		panic(fmt.Sprintf("assertion error: in union: %s", err))
+	}
+	union.B = token.B
+
+	typeParams, err := p.parseTypeParams()
+	if err != nil {
+		forwardErr(err)
+		return union
+	}
+	union.TypeParams = typeParams
+
+	if _, err := p.expect(TokLBrace); err != nil {
+		forwardErr(err)
+		return union
+	}
+
+	for {
+		token := p.next()
+		switch token.Kind {
+		case TokIden:
+			p.prev()
+			option := p.parseOption()
+			union.Members = append(union.Members, option)
+		case TokMessage:
+			message, err := p.parseMessage()
+			if err != nil {
+				forwardErr(err)
+				continue
+			}
+			union.LocalDefs = append(union.LocalDefs, message)
+		case TokRBrace:
+			union.E = token.E
+			return union
+		default:
+			forwardErr(makeExpectErr(token, TokOption, TokMessage, TokRBrace))
+			if token.Kind == TokEof {
+				return union
+			}
+		}
+	}
+}
+
+func (p *Parser) parseOption() MembNode {
+	option := MembNode{}
+
+	forwardErr := func(err ParserError) MembNode {
+		option.E = err.token().E
+		option.Poisoned = true
+		err.addKind(OptionNodeKind)
+		p.skipUntilSentinel()
+		p.emitError(err)
+		return option
+	}
+
+	var token Token
+
+	token, err := p.expect(TokIden)
+	if err != nil {
+		return forwardErr(err)
+	}
+	option.Iden = token.Value
+
+	ord, err := p.parseOrdWithToken(&token)
+	if err != nil {
+		return forwardErr(err)
+	}
+	option.B = token.B
+	option.Ord = ord
+
+	typ, err := p.parseType()
+	if err != nil {
+		return forwardErr(err)
+	}
+	option.LType = typ
+
+	firstToken, ok := p.eatWhile(TokSemicolon)
+	if !ok {
+		return forwardErr(makeExpectErr(firstToken, TokSemicolon))
+	}
+	option.E = firstToken.E
+
+	return option
+}
+
+func (p *Parser) parseEnum(name string, nameOk bool, size uint64) DefNode {
+	enum := DefNode{Kind: EnumNodeKind, Iden: name, Size: size}
+	enum.Poisoned = !nameOk
+
+	forwardErr := func(err ParserError) {
+		enum.E = err.token().E
+		enum.Poisoned = true
+		err.addKind(EnumNodeKind)
+		p.skipUntilSentinel()
+		p.emitError(err)
+	}
+
+	token, err := p.expect(TokEnum)
+	if err != nil {
+		panic(fmt.Sprintf("assertion error: in enum: %s", err))
+	}
+	enum.B = token.B
+
+	if _, err := p.expect(TokLBrace); err != nil {
+		forwardErr(err)
+		return enum
+	}
+	for {
+		token := p.next()
+		switch token.Kind {
+		case TokOrd:
+			p.prev()
+			ec := p.parseCase()
+			enum.Members = append(enum.Members, ec)
+		case TokRBrace:
+			enum.E = token.E
+			return enum
+		default:
+			forwardErr(makeExpectErr(token, TokCase, TokRBrace))
+			if token.Kind == TokEof {
+				return enum
+			}
+		}
+	}
+}
+
+func (p *Parser) parseCase() MembNode {
+	ec := MembNode{}
+
+	forwardErr := func(err ParserError) MembNode {
+		ec.E = err.token().E
+		ec.Poisoned = true
+		err.addKind(CaseNodeKind)
+		p.skipUntilSentinel()
+		p.emitError(err)
+		return ec
+	}
+
+	var token Token
+
+	ord, err := p.parseOrdWithToken(&token)
+	if err != nil {
+		return forwardErr(err)
+	}
+	ec.Ord = ord
+	ec.B = token.B
+
+	token, err = p.expect(TokIden)
+	if err != nil {
+		return forwardErr(err)
+	}
+	ec.Iden = token.Value
+
+	firstToken, ok := p.eatWhile(TokSemicolon)
+	if !ok {
+		return forwardErr(makeExpectErr(firstToken, TokSemicolon))
+	}
+	ec.E = firstToken.E
+
+	return ec
+}
+
+func (p *Parser) parseArraySize() (uint64, ParserError) {
+	token := p.next()
+	switch token.Kind {
+	case TokInteger:
+		size := token.Num
+		if _, err := p.expect(TokRBrack); err != nil {
+			return 0, err
+		}
+		return size, nil
+	case TokRBrack:
+		return 0, nil
+	default:
+		return 0, makeExpectErr(token, TokInteger, TokRBrack)
+	}
 }
 
 func (p *Parser) parseTypeParams() ([]string, ParserError) {
@@ -368,247 +668,6 @@ func (p *Parser) parseTypeParams() ([]string, ParserError) {
 		return nil, err
 	}
 	return typeParams, nil
-}
-
-func (p *Parser) parseStruct(name string, nameOk bool) Node {
-	strct := StructNode{Iden: name}
-	strct.Poisoned = !nameOk
-
-	forwardErr := func(err ParserError) {
-		strct.E = err.token().E
-		strct.Poisoned = true
-		err.addKind(StructNodeKind)
-		p.skipUntilSentinel()
-		p.emitError(err)
-	}
-
-	token, err := p.expect(TokStruct)
-	if err != nil {
-		panic(fmt.Sprintf("assertion error: in struct: %s", err))
-	}
-	strct.B = token.B
-
-	typeParams, err := p.parseTypeParams()
-	if err != nil {
-		forwardErr(err)
-		return &strct
-	}
-	strct.TypeParams = typeParams
-
-	if _, err := p.expect(TokLBrace); err != nil {
-		forwardErr(err)
-		return &strct
-	}
-
-	for {
-		token := p.next()
-		switch token.Kind {
-		case TokOptional, TokRequired, TokDeprecated:
-			p.prev()
-			field := p.parseField()
-			strct.Fields = append(strct.Fields, field)
-		case TokMessage:
-			message, err := p.parseMessage()
-			if err != nil {
-				forwardErr(err)
-				continue
-			}
-			strct.LocalDefs = append(strct.LocalDefs, message)
-		case TokRBrace:
-			strct.E = token.E
-			return &strct
-		default:
-			forwardErr(makeExpectErr(token, TokField, TokMessage, TokRBrace))
-			if token.Kind == TokEof {
-				return &strct
-			}
-		}
-	}
-}
-
-func (p *Parser) parseOption() *OptionNode {
-	var option OptionNode
-
-	forwardErr := func(err ParserError) *OptionNode {
-		option.E = err.token().E
-		option.Poisoned = true
-		err.addKind(OptionNodeKind)
-		p.skipUntilSentinel()
-		p.emitError(err)
-		return &option
-	}
-
-	var token Token
-
-	ord, err := p.parseOrdWithToken(&token)
-	if err != nil {
-		return forwardErr(err)
-	}
-	option.B = token.B
-	option.Ord = ord
-
-	token, err = p.expect(TokIden)
-	if err != nil {
-		return forwardErr(err)
-	}
-	option.Iden = token.Value
-
-	firstToken, ok := p.eatWhile(TokSemicolon)
-	if !ok {
-		return forwardErr(makeExpectErr(firstToken, TokSemicolon))
-	}
-	option.E = firstToken.E
-
-	return &option
-}
-
-func (p *Parser) parseUnion(name string, nameOk bool, size uint64) Node {
-	union := UnionNode{Iden: name, Size: size}
-	union.Poisoned = !nameOk
-
-	forwardErr := func(err ParserError) {
-		union.E = err.token().E
-		union.Poisoned = true
-		err.addKind(UnionNodeKind)
-		p.skipUntilSentinel()
-		p.emitError(err)
-	}
-
-	token, err := p.expect(TokUnion)
-	if err != nil {
-		panic(fmt.Sprintf("assertion error: in union: %s", err))
-	}
-	union.B = token.B
-
-	typeParams, err := p.parseTypeParams()
-	if err != nil {
-		forwardErr(err)
-		return &union
-	}
-	union.TypeParams = typeParams
-
-	if _, err := p.expect(TokLBrace); err != nil {
-		forwardErr(err)
-		return &union
-	}
-
-	for {
-		token := p.next()
-		switch token.Kind {
-		case TokOrd:
-			p.prev()
-			option := p.parseOption()
-			union.Options = append(union.Options, option)
-		case TokMessage:
-			message, err := p.parseMessage()
-			if err != nil {
-				forwardErr(err)
-				continue
-			}
-			union.LocalDefs = append(union.LocalDefs, message)
-		case TokRBrace:
-			union.E = token.E
-			return &union
-		default:
-			forwardErr(makeExpectErr(token, TokOption, TokMessage, TokRBrace))
-			if token.Kind == TokEof {
-				return &union
-			}
-		}
-	}
-}
-
-func (p *Parser) parseCase() *CaseNode {
-	var ec CaseNode
-
-	forwardErr := func(err ParserError) *CaseNode {
-		ec.E = err.token().E
-		ec.Poisoned = true
-		err.addKind(CaseNodeKind)
-		p.skipUntilSentinel()
-		p.emitError(err)
-		return &ec
-	}
-
-	var token Token
-
-	ord, err := p.parseOrdWithToken(&token)
-	if err != nil {
-		return forwardErr(err)
-	}
-	ec.Ord = ord
-	ec.B = token.B
-
-	token, err = p.expect(TokIden)
-	if err != nil {
-		return forwardErr(err)
-	}
-	ec.Iden = token.Value
-
-	firstToken, ok := p.eatWhile(TokSemicolon)
-	if !ok {
-		return forwardErr(makeExpectErr(firstToken, TokSemicolon))
-	}
-	ec.E = firstToken.E
-
-	return &ec
-}
-
-func (p *Parser) parseEnum(name string, nameOk bool, size uint64) Node {
-	enum := EnumNode{Iden: name, Size: size}
-	enum.Poisoned = !nameOk
-
-	forwardErr := func(err ParserError) {
-		enum.E = err.token().E
-		enum.Poisoned = true
-		err.addKind(EnumNodeKind)
-		p.skipUntilSentinel()
-		p.emitError(err)
-	}
-
-	token, err := p.expect(TokEnum)
-	if err != nil {
-		panic(fmt.Sprintf("assertion error: in enum: %s", err))
-	}
-	enum.B = token.B
-
-	if _, err := p.expect(TokLBrace); err != nil {
-		forwardErr(err)
-		return &enum
-	}
-	for {
-		token := p.next()
-		switch token.Kind {
-		case TokOrd:
-			p.prev()
-			ec := p.parseCase()
-			enum.Cases = append(enum.Cases, ec)
-		case TokRBrace:
-			enum.E = token.E
-			return &enum
-		default:
-			forwardErr(makeExpectErr(token, TokCase, TokRBrace))
-			if token.Kind == TokEof {
-				return &enum
-			}
-		}
-	}
-}
-
-func (p *Parser) parseArraySize() (uint64, ParserError) {
-	token := p.next()
-	switch token.Kind {
-	case TokInteger:
-		size := token.Num
-		if _, err := p.expect(TokRBrack); err != nil {
-			return 0, err
-		}
-		return size, nil
-	case TokRBrack:
-		return 0, nil
-	default:
-		return 0, makeExpectErr(token, TokInteger, TokRBrack)
-	}
 }
 
 func (p *Parser) parseTypeArgs(token *Token) ([]TypeNode, ParserError) {
@@ -713,63 +772,8 @@ func (p *Parser) parseOrdWithToken(token *Token) (uint64, ParserError) {
 	return ord, nil
 }
 
-func (p *Parser) parseField() *FieldNode {
-	var field FieldNode
-
-	forwardErr := func(err ParserError) *FieldNode {
-		field.E = err.token().E
-		field.Poisoned = true
-		err.addKind(FieldNodeKind)
-		p.skipUntilSentinel()
-		p.emitError(err)
-		return &field
-	}
-
-	var token Token
-	var err ParserError
-	var ord uint64
-
-	token = p.next()
-	field.B = token.B
-
-	switch token.Kind {
-	case TokRequired:
-		field.Modifier = Required
-	case TokOptional:
-		field.Modifier = Optional
-	case TokDeprecated:
-		field.Modifier = Deprecated
-	default:
-		return forwardErr(makeExpectErr(token, TokRequired, TokOptional, TokDeprecated))
-	}
-
-	if token, err = p.expect(TokIden); err != nil {
-		return forwardErr(err)
-	}
-	field.Iden = token.Value
-
-	if ord, err = p.parseOrd(); err != nil {
-		return forwardErr(err)
-	}
-	field.Ord = ord
-
-	typ, err := p.parseType()
-	if err != nil {
-		return forwardErr(err)
-	}
-	field.Type = typ
-
-	firstToken, ok := p.eatWhile(TokSemicolon)
-	if !ok {
-		return forwardErr(makeExpectErr(firstToken, TokSemicolon))
-	}
-	field.E = firstToken.E
-
-	return &field
-}
-
-func (p *Parser) parseService() Node {
-	var svc ServiceNode
+func (p *Parser) parseService() DefNode {
+	svc := DefNode{Kind: ServiceNodeKind}
 
 	forwardErr := func(err ParserError) {
 		svc.E = err.token().E
@@ -787,12 +791,12 @@ func (p *Parser) parseService() Node {
 	token, err = p.expect(TokIden)
 	if err != nil {
 		forwardErr(err)
-		return &svc
+		return svc
 	}
 	svc.Iden = token.Value
 	if _, err := p.expect(TokLBrace); err != nil {
 		forwardErr(err)
-		return &svc
+		return svc
 	}
 
 	for {
@@ -801,7 +805,7 @@ func (p *Parser) parseService() Node {
 		case TokRpc:
 			p.prev()
 			rpc := p.parseRpc()
-			svc.Procedures = append(svc.Procedures, rpc)
+			svc.Members = append(svc.Members, rpc)
 		case TokMessage:
 			message, err := p.parseMessage()
 			if err != nil {
@@ -810,26 +814,26 @@ func (p *Parser) parseService() Node {
 			}
 			svc.LocalDefs = append(svc.LocalDefs, message)
 		case TokRBrace:
-			return &svc
+			return svc
 		default:
 			forwardErr(makeExpectErr(token, TokRpc, TokMessage, TokRBrace))
 			if token.Kind == TokEof {
-				return &svc
+				return svc
 			}
 		}
 	}
 }
 
-func (p *Parser) parseRpc() *RpcNode {
-	var rpc RpcNode
+func (p *Parser) parseRpc() MembNode {
+	rpc := MembNode{}
 
-	forwardErr := func(err ParserError) *RpcNode {
+	forwardErr := func(err ParserError) MembNode {
 		rpc.E = err.token().E
 		rpc.Poisoned = true
 		err.addKind(RpcNodeKind)
 		p.skipUntilSentinel()
 		p.emitError(err)
-		return &rpc
+		return rpc
 	}
 
 	token, err := p.expect(TokRpc)
@@ -857,7 +861,7 @@ func (p *Parser) parseRpc() *RpcNode {
 	if err != nil {
 		return forwardErr(err)
 	}
-	rpc.Arg = typ
+	rpc.LType = typ
 
 	if err = p.expectChain(TokRParen, TokReturns, TokLParen); err != nil {
 		return forwardErr(err)
@@ -867,7 +871,7 @@ func (p *Parser) parseRpc() *RpcNode {
 	if err != nil {
 		return forwardErr(err)
 	}
-	rpc.Ret = typ
+	rpc.RType = typ
 
 	token, err = p.expect(TokRParen)
 	if err != nil {
@@ -875,5 +879,5 @@ func (p *Parser) parseRpc() *RpcNode {
 	}
 	rpc.E = token.E
 
-	return &rpc
+	return rpc
 }

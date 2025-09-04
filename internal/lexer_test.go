@@ -2,6 +2,7 @@ package internal
 
 import (
 	"testing"
+	// "time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -49,7 +50,7 @@ func TestLexer_Struct(t *testing.T) {
 		optional three @3 [16]b4;
 	}
 
-	message Data2 struct[A, B] {
+	message Data2 struct(A, B) {
 		deprecated one @1 A;
         required two @2 B;
 	}
@@ -85,11 +86,11 @@ func TestLexer_Struct(t *testing.T) {
 		{Kind: TokMessage, Value: "message"},
 		{Kind: TokIden, Value: "Data2"},
 		{Kind: TokStruct, Value: "struct"},
-		{Kind: TokLBrack, Value: "["},
+		{Kind: TokLParen, Value: "("},
 		{Kind: TokIden, Value: "A"},
 		{Kind: TokComma, Value: ","},
 		{Kind: TokIden, Value: "B"},
-		{Kind: TokRBrack, Value: "]"},
+		{Kind: TokRParen, Value: ")"},
 		{Kind: TokLBrace, Value: "{"},
 		{Kind: TokDeprecated, Value: "deprecated"},
 		{Kind: TokIden, Value: "one"},
@@ -110,9 +111,9 @@ func TestLexer_Struct(t *testing.T) {
 func TestLexer_Union(t *testing.T) {
 	input := `
 	message Data3 enum {
-		@1 One;
-		@2 Two;
-		@3 Three;
+		one @1 One;
+		two @2 Two;
+		three @3 Three;
 	}
 	`
 	tokens := runLexer(input)
@@ -122,12 +123,15 @@ func TestLexer_Union(t *testing.T) {
 		{Kind: TokIden, Value: "Data3"},
 		{Kind: TokEnum, Value: "enum"},
 		{Kind: TokLBrace, Value: "{"},
+		{Kind: TokIden, Value: "one"},
 		{Kind: TokOrd, Value: "@1", Num: 1},
 		{Kind: TokIden, Value: "One"},
 		{Kind: TokSemicolon, Value: ";"},
+		{Kind: TokIden, Value: "two"},
 		{Kind: TokOrd, Value: "@2", Num: 2},
 		{Kind: TokIden, Value: "Two"},
 		{Kind: TokSemicolon, Value: ";"},
+		{Kind: TokIden, Value: "three"},
 		{Kind: TokOrd, Value: "@3", Num: 3},
 		{Kind: TokIden, Value: "Three"},
 		{Kind: TokSemicolon, Value: ";"},

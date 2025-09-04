@@ -5,156 +5,125 @@ import (
 	"strings"
 )
 
-func ClearNode(n Node) {
-	if n == nil {
-		return
-	}
-	n.Clear()
-	switch node := n.(type) {
-	case *StructNode:
+func ClearNodeList(nodes []DefNode) {
+	for i := range nodes {
+		node := &nodes[i]
+		node.Clear()
+		for i := range node.Members {
+			node := &node.Members[i]
+			node.Clear()
+			ClearTypeNode(&node.LType)
+			ClearTypeNode(&node.RType)
+		}
 		ClearNodeList(node.LocalDefs)
-		for _, field := range node.Fields {
-			ClearNode(field)
-		}
-	case *UnionNode:
-		ClearNodeList(node.LocalDefs)
-		for _, option := range node.Options {
-			ClearNode(option)
-		}
-	case *EnumNode:
-		for _, c := range node.Cases {
-			ClearNode(c)
-		}
-	case *ServiceNode:
-		ClearNodeList(node.LocalDefs)
-		for _, proc := range node.Procedures {
-			ClearNode(proc)
-		}
-	case *RpcNode:
-		ClearNode(&node.Arg)
-		ClearNode(&node.Ret)
-	case *FieldNode:
-		ClearNode(&node.Type)
 	}
 }
 
-func ClearNodeList(nodes []Node) {
-	for _, node := range nodes {
-		ClearNode(node)
+func ClearTypeNode(node *TypeNode) {
+	node.Clear()
+	for i := range node.TypeArgs {
+		ClearTypeNode(&node.TypeArgs[i])
 	}
 }
 
-func StringifyNode(sb *strings.Builder, n Node, depth int) {
-	if n == nil {
-		return
-	}
-
-	write := func(s string) {
-		sb.WriteString(s)
-	}
-	indents := func() {
-		for range depth {
-			write("\t")
-		}
-	}
-
-	nextDepth := depth + 1
-
-	switch node := n.(type) {
-	case *ImportNode:
-		write(fmt.Sprintf("import \"%s\"\n", node.Path))
-	case *PropertyNode:
-		write(fmt.Sprintf("%s \"%s\"\n", node.Iden, node.Value))
-	case *StructNode:
-		indents()
-		write(fmt.Sprintf("message %s struct {\n", node.Iden))
-		for _, field := range node.Fields {
-			StringifyNode(sb, field, nextDepth)
-		}
-		StringifyNodeList(sb, node.LocalDefs, nextDepth)
-		indents()
-		write("}\n")
-	case *UnionNode:
-		indents()
-		write(fmt.Sprintf("message %s union {\n", node.Iden))
-		for _, option := range node.Options {
-			StringifyNode(sb, option, nextDepth)
-		}
-		StringifyNodeList(sb, node.LocalDefs, nextDepth)
-		indents()
-		write("}\n")
-	case *EnumNode:
-		indents()
-		write(fmt.Sprintf("message %s enum {\n", node.Iden))
-		for _, c := range node.Cases {
-			StringifyNode(sb, c, nextDepth)
-		}
-		indents()
-		write("}\n")
-	case *FieldNode:
-		indents()
-		write(fmt.Sprintf("%s %s @%d ", node.Modifier, node.Iden, node.Ord))
-		StringifyNode(sb, &node.Type, nextDepth)
-		write(";\n")
-	case *CaseNode:
-		indents()
-		write(fmt.Sprintf("@%d %s;\n", node.Ord, node.Iden))
-	case *OptionNode:
-		indents()
-		write(fmt.Sprintf("@%d %s;\n", node.Ord, node.Iden))
-	case *ServiceNode:
-		indents()
-		write(fmt.Sprintf("service %s {\n", node.Iden))
-		for _, proc := range node.Procedures {
-			StringifyNode(sb, proc, nextDepth)
-		}
-		StringifyNodeList(sb, node.LocalDefs, nextDepth)
-		indents()
-		write("}\n")
-	case *RpcNode:
-		indents()
-		write(fmt.Sprintf("rpc @%d %s(", node.Ord, node.Iden))
-		StringifyNode(sb, &node.Arg, depth)
-		write(") returns (")
-		StringifyNode(sb, &node.Ret, depth)
-		write(");\n")
-	case *TypeNode:
-		for _, size := range node.Array {
-			if size != 0 {
-				write(fmt.Sprintf("[%d]", size))
-			} else {
-				write("[]")
-			}
-		}
-		write(node.Iden)
-		for i, t := range node.TypeArgs {
-			if i == 0 {
-				write("(")
-			}
-			StringifyNode(sb, &t, depth)
-			if i < len(node.TypeArgs)-1 {
-				write(", ")
-			} else {
-				write(")")
-			}
-		}
-	}
-}
-
-func StringifyNodeList(sb *strings.Builder, nodes []Node, depth int) {
-	for _, node := range nodes {
-		if depth != 0 {
-			switch node.(type) {
-			case *StructNode, *UnionNode, *EnumNode:
-				sb.WriteString("\n")
-			}
-		}
-		StringifyNode(sb, node, depth)
-	}
-}
-
-func StringifyAst(nodes []Node) string {
+func WriteAst(nodes []DefNode) string {
 	var sb strings.Builder
-	StringifyNodeList(&sb, nodes, 0)
+	WriteNodeList(&sb, nodes, 0)
 	return sb.String()
+}
+
+func writeIndents(sb *strings.Builder, depth int) {
+	for range depth {
+		sb.WriteString("\t")
+	}
+}
+
+func WriteNodeList(sb *strings.Builder, nodes []DefNode, depth int) {
+	for _, node := range nodes {
+		if depth != 0 && (node.Kind == StructNodeKind || node.Kind == UnionNodeKind || node.Kind == EnumNodeKind) {
+			sb.WriteString("\n")
+		}
+		switch node.Kind {
+		case ImportNodeKind:
+			fmt.Fprintf(sb, "import \"%s\"\n", node.Value)
+		case PropertyNodeKind:
+			fmt.Fprintf(sb, "%s \"%s\"\n", node.Iden, node.Value)
+		case StructNodeKind:
+			writeIndents(sb, depth)
+			fmt.Fprintf(sb, "message %s struct {\n", node.Iden)
+			WriteMemberList(sb, node.MemberKind(), node.Members, depth+1)
+			WriteNodeList(sb, node.LocalDefs, depth+1)
+			writeIndents(sb, depth)
+			sb.WriteString("}\n")
+		case UnionNodeKind:
+			writeIndents(sb, depth)
+			fmt.Fprintf(sb, "message %s union {\n", node.Iden)
+			WriteMemberList(sb, node.MemberKind(), node.Members, depth+1)
+			WriteNodeList(sb, node.LocalDefs, depth+1)
+			writeIndents(sb, depth)
+			sb.WriteString("}\n")
+		case EnumNodeKind:
+			writeIndents(sb, depth)
+			fmt.Fprintf(sb, "message %s enum {\n", node.Iden)
+			WriteMemberList(sb, node.MemberKind(), node.Members, depth+1)
+			writeIndents(sb, depth)
+			sb.WriteString("}\n")
+		case ServiceNodeKind:
+			writeIndents(sb, depth)
+			fmt.Fprintf(sb, "service %s {\n", node.Iden)
+			WriteMemberList(sb, node.MemberKind(), node.Members, depth+1)
+			WriteNodeList(sb, node.LocalDefs, depth+1)
+			writeIndents(sb, depth)
+			sb.WriteString("}\n")
+		}
+	}
+}
+
+func WriteType(sb *strings.Builder, node TypeNode) {
+	for _, size := range node.Array {
+		if size != 0 {
+			fmt.Fprintf(sb, "[%d]", size)
+		} else {
+			sb.WriteString("[]")
+		}
+	}
+	sb.WriteString(node.Iden)
+	for i, t := range node.TypeArgs {
+		if i == 0 {
+			sb.WriteString("(")
+		}
+		WriteType(sb, t)
+		if i < len(node.TypeArgs)-1 {
+			sb.WriteString(", ")
+		} else {
+			sb.WriteString(")")
+		}
+	}
+}
+
+func WriteMemberList(sb *strings.Builder, kind NodeKind, nodes []MembNode, depth int) {
+	for _, node := range nodes {
+		switch kind {
+		case FieldNodeKind:
+			writeIndents(sb, depth)
+			fmt.Fprintf(sb, "%s %s @%d ", node.Modifier, node.Iden, node.Ord)
+			WriteType(sb, node.LType)
+			sb.WriteString(";\n")
+		case CaseNodeKind:
+			writeIndents(sb, depth)
+			fmt.Fprintf(sb, "@%d %s;\n", node.Ord, node.Iden)
+		case OptionNodeKind:
+			writeIndents(sb, depth)
+			fmt.Fprintf(sb, "%s @%d ", node.Iden, node.Ord)
+			WriteType(sb, node.LType)
+			sb.WriteString(";\n")
+		case RpcNodeKind:
+			writeIndents(sb, depth)
+			fmt.Fprintf(sb, "rpc @%d %s(", node.Ord, node.Iden)
+			WriteType(sb, node.LType)
+			sb.WriteString(") returns (")
+			WriteType(sb, node.RType)
+			sb.WriteString(");\n")
+		}
+	}
 }

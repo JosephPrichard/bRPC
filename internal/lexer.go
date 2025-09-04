@@ -293,7 +293,7 @@ func (lex *Lexer) acceptWhile(valid string) {
 }
 
 func (lex *Lexer) acceptUntil(invalid string) {
-	for !strings.ContainsRune(invalid, lex.peek()) {
+	for lex.peek() != eof && !strings.ContainsRune(invalid, lex.peek()) {
 		lex.consume()
 	}
 }
