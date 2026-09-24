@@ -1,6 +1,9 @@
 package internal
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 type NodeKind int
 
@@ -92,21 +95,14 @@ func (r *Positions) Clear() {
 	r.B = 0
 }
 
-type DefNode struct {
-	Positions
-	Kind       NodeKind
-	Poisoned   bool
-	Iden       string
-	Value      string
-	TypeTable  *TypeTable
-	Members    []MembNode
-	TypeParams []string
-	LocalDefs  []DefNode
-	Size       uint64
+var DeclNodeKinds = []NodeKind{StructNodeKind, UnionNodeKind, EnumNodeKind, ServiceNodeKind}
+
+func (k NodeKind) isTypeDecl() bool {
+	return slices.Contains(DeclNodeKinds, k)
 }
 
-func (n *DefNode) MemberKind() NodeKind {
-	switch n.Kind {
+func (k NodeKind) MemberKind() NodeKind {
+	switch k {
 	case StructNodeKind:
 		return FieldNodeKind
 	case UnionNodeKind:
@@ -117,6 +113,19 @@ func (n *DefNode) MemberKind() NodeKind {
 		return RpcNodeKind
 	}
 	return NoNodeKind
+}
+
+type DefNode struct {
+	Positions
+	Kind       NodeKind
+	Poisoned   bool
+	Iden       string
+	Value      string
+	DefStack   *TypeDefStack
+	Members    []MembNode
+	TypeParams []string
+	LocalDefs  []DefNode
+	Size       uint64
 }
 
 type MembNode struct {

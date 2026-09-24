@@ -79,9 +79,9 @@ func (err *ParseErr) Error() string {
 			sb.WriteString(dlm)
 		}
 	case EscSeqErrKind:
-		sb.WriteString(fmt.Sprintf("invalid escape sequence: '/%c'", err.escSeq))
+		fmt.Fprintf(&sb, "invalid escape sequence: '/%c'", err.escSeq)
 	case NumErrKind:
-		sb.WriteString(fmt.Sprintf("%s is an invalid integer", err.actual.String()))
+		fmt.Fprintf(&sb, "%s is an invalid integer", err.actual.String())
 	case SizeErrKind:
 		sb.WriteString("struct does not allow a size argument")
 	case IdenErrKind:
@@ -112,37 +112,44 @@ func (err *ParseErr) Error() string {
 	return sb.String()
 }
 
-type TransformErrKind int
+type ValidErrKind int
 
 const (
-	RedefErrKind TransformErrKind = iota
+	RedefErrKind ValidErrKind = iota
 	UndefErrKind
 	FirstOrdErrKind
 	OrdErrKind
+	TypeArgErrKind
 )
 
-type TransformErr struct {
-	eKind  TransformErrKind
-	p      Positions
-	nKind  NodeKind
-	iden   string
-	expOrd uint64
-	gotOrd uint64
+type ValidateErr struct {
+	eKind       ValidErrKind
+	p           Positions
+	nKind       NodeKind
+	iden        string
+	expOrd      uint64
+	gotOrd      uint64
+	expTypeArgs []string
+	gotTypeArgs []TypeNode
 }
 
 func makeRedefErr(nKind NodeKind, p Positions, iden string) error {
-	return &TransformErr{eKind: RedefErrKind, p: p, nKind: nKind, iden: iden}
+	return &ValidateErr{eKind: RedefErrKind, p: p, nKind: nKind, iden: iden}
 }
 
 func makeUndefErr(nKind NodeKind, p Positions, iden string) error {
-	return &TransformErr{eKind: UndefErrKind, p: p, nKind: nKind, iden: iden}
+	return &ValidateErr{eKind: UndefErrKind, p: p, nKind: nKind, iden: iden}
 }
 
 func makeOrdErr(nKind NodeKind, p Positions, expOrd uint64, gotOrd uint64) error {
-	return &TransformErr{eKind: OrdErrKind, p: p, nKind: nKind, expOrd: expOrd, gotOrd: gotOrd}
+	return &ValidateErr{eKind: OrdErrKind, p: p, nKind: nKind, expOrd: expOrd, gotOrd: gotOrd}
 }
 
-func (err *TransformErr) Error() string {
+func makeTypeArgErr(nKind NodeKind, p Positions, expTypeArgs []string, gotTypeArgs []TypeNode) error {
+	return &ValidateErr{eKind: TypeArgErrKind, p: p, nKind: nKind, expTypeArgs: expTypeArgs, gotTypeArgs: gotTypeArgs}
+}
+
+func (err *ValidateErr) Error() string {
 	var sb strings.Builder
 	sb.WriteString(err.p.Offset())
 	sb.WriteRune(' ')
@@ -151,11 +158,22 @@ func (err *TransformErr) Error() string {
 
 	switch err.eKind {
 	case RedefErrKind:
-		sb.WriteString(fmt.Sprintf("\"%s\" is redefined", err.iden))
+		fmt.Fprintf(&sb, "\"%s\" is redefined", err.iden)
 	case UndefErrKind:
-		sb.WriteString(fmt.Sprintf("\"%s\" is undefined", err.iden))
+		fmt.Fprintf(&sb, "\"%s\" is undefined", err.iden)
 	case OrdErrKind:
-		sb.WriteString(fmt.Sprintf("order tag '@%d' should be '@%d'", err.gotOrd, err.expOrd))
+		fmt.Fprintf(&sb, "order tag '@%d' should be '@%d'", err.gotOrd, err.expOrd)
+	case TypeArgErrKind:
+		fmt.Fprintf(&sb, "expected %d type arguments", len(err.expTypeArgs))
+		if len(err.expTypeArgs) > 0 {
+			sb.WriteString(": ")
+		}
+		FmtTypeParams(&sb, err.expTypeArgs)
+		fmt.Fprintf(&sb, ", got %d type arguments", len(err.gotTypeArgs))
+		if len(err.gotTypeArgs) > 0 {
+			sb.WriteString(": ")
+		}
+		FmtTypeArgs(&sb, err.gotTypeArgs)
 	}
 
 	return sb.String()
@@ -169,8 +187,9 @@ func printErrors(errs []error, filePath string, printLine func(string)) {
 
 func clearErrors(errs []error) {
 	for _, err := range errs {
-		if pErr, ok := err.(*ParseErr); ok {
-			pErr.actual.Positions = Positions{}
+		switch err := err.(type) {
+		case *ParseErr:
+			err.actual.Positions = Positions{}
 		}
 	}
 }

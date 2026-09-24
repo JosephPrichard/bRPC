@@ -114,7 +114,7 @@ func (k TokKind) String() string {
 	case TokComment:
 		return "'//'"
 	case TokTypeRef:
-		return "typeref"
+		return "type"
 	case TokTypeDef:
 		return "typedef"
 	case TokField:

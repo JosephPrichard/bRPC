@@ -731,7 +731,7 @@ func (p *Parser) parseType() (TypeNode, ParserError) {
 
 			// select the beginning token depending on whether the type ref is an array or not
 			var tokenB = token
-			if arrTokenB.Kind == TokUnknown {
+			if arrTokenB.Kind != TokUnknown {
 				tokenB = arrTokenB
 			}
 			tokenE := tokenB

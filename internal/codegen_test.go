@@ -35,10 +35,10 @@ func TestCodegen_Structs(t *testing.T) {
 func TestCodegen_Union(t *testing.T) {
 	input := `
 	message Data union {
-		two @2 B;
-		three @3 C;
-		one @1 A;
-		four @4 D;
+		two @2 int1;
+		three @3 int2;
+		one @1 int3;
+		four @4 int4;
 	}
 	`
 
@@ -130,8 +130,8 @@ func TestCodegen_Errors(t *testing.T) {
 		// 		@2 One;
 		// 	}
 		// 	message Data3 union {
-		// 		@1 Data1;
-		// 		@2 Data2;
+		// 		one @1 Data1;
+		// 		two @2 Data2;
 		// 	}
 		// 	`,
 		// 	errs: []error{},
@@ -149,76 +149,90 @@ func TestCodegen_Errors(t *testing.T) {
 		// 		@1 One;
 		// 	}
 		// 	message Data3 union {
-		// 		@1 Data1;
-		// 		@1 Data2;
+		// 		one @1 Data1;
+		// 		two @1 Data2;
 		// 	}
 		// 	message Data4 union {
-		// 		@0 Data1;
-		// 		@4 Data2;
+		// 		one @0 Data1;
+		// 		two @4 Data2;
 		// 	}
 		// 	`,
 		// 	errs: []error{},
 		// },
-		{
-			name: "UnresolvedIden",
-			input: `
-			message Data1 struct {
-				required one @1 int16;
-				deprecated two @2 int16;
-				deprecated one @3 int16;
-
-				message Data3 union {
-					@1 Data2;
-					@2 Invalid;
-				}
-			}
-			message Data2 struct {
-				required one @1 Data1;
-				required two @2 Invalid;
-			}
-			`,
-			errs: []error{},
-		},
-		{
-			name: "RecursiveAst",
-			input: `
-			message Data1 struct {
-				required one @1 int16;
-				deprecated two @2 Data1;
-				deprecated one @3 int16;
-
-				message Data4 union {
-					@1 Data1;
-					@2 Data4;
-				}
-			}
-
-			message Data2 struct {
-				required one @1 Data3;
-
-				message Data3 struct {
-					required one @1 Data2;
-				}
-			}
-			`,
-			errs: []error{},
-		},
 		// {
-		// 	name: "InvalidTypeArgs",
+		// 	name: "UnresolvedIden",
 		// 	input: `
 		// 	message Data1 struct {
-		// 		required one @1 Data2;
-		// 		required one @2 Data2(int8);
-		// 		required one @3 Data2(int16, int18);
-		// 	}
+		// 		required one @1 int16;
+		// 		deprecated two @2 int16;
+		// 		deprecated one @3 int16;
 
-		// 	message Data2 union(A) {
-		// 		@1 A;
-		// 		@2 B;
+		// 		message Data3 union {
+		// 			one @1 Data2;
+		// 			two @2 Invalid;
+		// 		}
+		// 	}
+		// 	message Data2 struct {
+		// 		required one @1 Data1;
+		// 		required two @2 Invalid;
 		// 	}
 		// 	`,
 		// 	errs: []error{},
 		// },
+		// {
+		// 	name: "RecursiveAst",
+		// 	input: `
+		// 	message Data1 struct {
+		// 		required one @1 int16;
+		// 		deprecated two @2 Data1;
+		// 		deprecated one @3 int16;
+
+		// 		message Data4 union {
+		// 			one @1 Data1;
+		// 			two @2 Data4;
+		// 		}
+		// 	}
+
+		// 	message Data2 struct {
+		// 		required one @1 Data3;
+
+		// 		message Data3 struct {
+		// 			required one @1 Data2;
+		// 		}
+		// 	}
+		// 	`,
+		// 	errs: []error{},
+		// },
+		{
+			name: "InvalidTypeArgs",
+			input: `
+			message Data1 struct {
+				required one @1 Data2;
+				required two @2 Data2(int8);
+				required three @3 Data2(int16, int18);
+			}
+
+			message Data2 union(A) {
+				one @1 A;
+				two @2 B;
+			}
+			`,
+			errs: []error{},
+		},
+		{
+			name: "RecursiveTypeArgs",
+			input: `
+			message Data3 struct(A) {
+				deprecated one @1 A;
+			}
+
+			message Data2 union {
+				one @1 Data3(Data2);
+				two @2 int16;
+			}
+			`,
+			errs: []error{},
+		},
 	}
 
 	for _, test := range tests {

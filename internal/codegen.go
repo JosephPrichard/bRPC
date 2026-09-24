@@ -17,25 +17,6 @@ func makeCodeBuilder(propTable PropTable, importTable ImportTable, errs *[]error
 	return CodeBuilder{propTable: propTable, importTable: importTable, errs: errs}
 }
 
-func (b *CodeBuilder) buildNodes(nodes []DefNode) {
-	for _, node := range nodes {
-		b.build(node)
-	}
-}
-
-func (b *CodeBuilder) build(node DefNode) {
-	switch node.Kind {
-	case StructNodeKind:
-		b.buildStruct(node)
-	case UnionNodeKind:
-		b.buildUnion(node)
-	case EnumNodeKind:
-		b.buildEnum(node)
-	case ServiceNodeKind:
-		b.buildService(node)
-	}
-}
-
 // this operation is common enough to extract it out to a utility function
 func (b *CodeBuilder) write(s string) {
 	b.sb.WriteString(s)
@@ -47,6 +28,28 @@ func (b *CodeBuilder) writeIden(s string) {
 			c = unicode.ToUpper(c)
 		}
 		b.sb.WriteRune(c)
+	}
+}
+
+func (b *CodeBuilder) buildNodeList(nodes []DefNode) {
+	for _, node := range nodes {
+		b.build(node)
+	}
+}
+
+func (b *CodeBuilder) build(node DefNode) {
+	if node.Poisoned {
+		return
+	}
+	switch node.Kind {
+	case StructNodeKind:
+		b.buildStruct(node)
+	case UnionNodeKind:
+		b.buildUnion(node)
+	case EnumNodeKind:
+		b.buildEnum(node)
+	case ServiceNodeKind:
+		b.buildService(node)
 	}
 }
 
@@ -62,10 +65,6 @@ func (b *CodeBuilder) buildType(t TypeNode) {
 }
 
 func (b *CodeBuilder) buildStruct(strct DefNode) {
-	if strct.Poisoned {
-		return
-	}
-
 	// build out the struct type definition
 	b.write("type ")
 	b.write(strct.Iden)
@@ -83,10 +82,6 @@ func (b *CodeBuilder) buildStruct(strct DefNode) {
 }
 
 func (b *CodeBuilder) buildUnion(union DefNode) {
-	if union.Poisoned {
-		return
-	}
-
 	// build out the union type definition
 	b.write("type ")
 	b.write(union.Iden)
@@ -125,10 +120,6 @@ func (b *CodeBuilder) buildUnion(union DefNode) {
 }
 
 func (b *CodeBuilder) buildEnum(enum DefNode) {
-	if enum.Poisoned {
-		return
-	}
-
 	// build out the enum type definition and cases
 	b.write("type ")
 	b.write(enum.Iden)
@@ -151,9 +142,6 @@ func (b *CodeBuilder) buildEnum(enum DefNode) {
 }
 
 func (b *CodeBuilder) buildService(svc DefNode) {
-	if svc.Poisoned {
-		return
-	}
 
 }
 
@@ -169,17 +157,16 @@ func runCodeBuilder(program string, pack string, errs *[]error) string {
 	importTable := makeImportTable()
 	propTable := makePropTable(nodes)
 
-	tb := makeTransformer(errs)
-	tb.transformNodeList(nodes, nil)
-	tb.validateNodeList(nodes)
+	transformDefList(nodes, nil, errs)
+	validateDefList(nodes, errs)
 
 	if len(*errs) > 0 {
 		return ""
 	}
 
-	cb := makeCodeBuilder(propTable, importTable, errs)
-	cb.buildPackage(pack)
-	cb.buildNodes(nodes)
+	b := makeCodeBuilder(propTable, importTable, errs)
+	b.buildPackage(pack)
+	b.buildNodeList(nodes)
 
-	return cb.sb.String()
+	return b.sb.String()
 }

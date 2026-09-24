@@ -20,7 +20,7 @@ func TestParser_Properties(t *testing.T) {
 	nodes := runParser(input, &errs)
 	ClearNodeList(nodes)
 
-	t.Logf("\n%s\n", WriteAst(nodes))
+	t.Logf("\n%s\n", FmtAst(nodes))
 
 	expectedNodes := []DefNode{
 		{Kind: ImportNodeKind, Value: "/services/schemas/animals"},
@@ -54,7 +54,7 @@ func TestParser_Struct(t *testing.T) {
 	nodes := runParser(input, &errs)
 	ClearNodeList(nodes)
 
-	t.Logf("\n%s\n", WriteAst(nodes))
+	t.Logf("\n%s\n", FmtAst(nodes))
 
 	expectedNodes := []DefNode{
 		{
@@ -105,7 +105,7 @@ func TestParser_Enum(t *testing.T) {
 	nodes := runParser(input, &errs)
 	ClearNodeList(nodes)
 
-	t.Logf("\n%s\n", WriteAst(nodes))
+	t.Logf("\n%s\n", FmtAst(nodes))
 
 	expectedNodes := []DefNode{
 		{
@@ -141,7 +141,7 @@ func TestParser_Union(t *testing.T) {
 	nodes := runParser(input, &errs)
 	ClearNodeList(nodes)
 
-	t.Logf("\n%s\n", WriteAst(nodes))
+	t.Logf("\n%s\n", FmtAst(nodes))
 
 	expectedNodes := []DefNode{
 		{
@@ -187,7 +187,7 @@ func TestParser_Service(t *testing.T) {
 	nodes := runParser(input, &errs)
 	ClearNodeList(nodes)
 
-	t.Logf("\n%s\n", WriteAst(nodes))
+	t.Logf("\n%s\n", FmtAst(nodes))
 
 	expectedNodes := []DefNode{
 		{
@@ -371,8 +371,16 @@ func TestParser_Errors(t *testing.T) {
 			},
 		},
 		{
-			name:  "InvalidUnion",
-			input: `message Data3 struct { required one @1; message Data4 union { @1 One; @2 5; Two; } }`,
+			name: "InvalidUnion",
+			input: `
+			message Data3 struct { 
+				required one @1; 
+				message Data4 union { 
+					one @1 One; 
+					two @2 5; 
+					three Two; 
+				}
+			}`,
 			nodes: []DefNode{
 				{
 					Kind: StructNodeKind,
@@ -383,12 +391,13 @@ func TestParser_Errors(t *testing.T) {
 					LocalDefs: []DefNode{
 						{
 							Kind:     UnionNodeKind,
-							Poisoned: true,
+							Poisoned: false,
 							Iden:     "Data4",
 							Size:     16,
 							Members: []MembNode{
-								{Iden: "One", Ord: 1},
-								{Poisoned: true, Ord: 2},
+								{Iden: "one", Ord: 1, LType: TypeNode{Iden: "One"}},
+								{Poisoned: true, Iden: "two", Ord: 2},
+								{Poisoned: true, Iden: "three"},
 							},
 						},
 					},
@@ -403,12 +412,12 @@ func TestParser_Errors(t *testing.T) {
 				&ParseErr{
 					actual:   Token{TokVal{Kind: TokInteger, Value: "5", Num: 5}, Positions{}},
 					nodeKind: OptionNodeKind,
-					expected: []TokKind{TokIden},
+					expected: []TokKind{TokTypeRef},
 				},
 				&ParseErr{
 					actual:   Token{TokVal{Kind: TokIden, Value: "Two"}, Positions{}},
-					nodeKind: UnionNodeKind,
-					expected: []TokKind{TokOption, TokMessage, TokRBrace},
+					nodeKind: OptionNodeKind,
+					expected: []TokKind{TokOrd},
 				},
 			},
 		},

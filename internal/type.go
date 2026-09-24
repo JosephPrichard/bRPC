@@ -10,6 +10,7 @@ type Type struct {
 	Bits      int    // populated for bit-width integers intead of iden
 	Iden      string // populated for non-integer identifiers
 	Primitive bool
+	value     string
 }
 
 func isPrimitive(iden string) bool {
@@ -48,16 +49,23 @@ func makeType(iden string) Type {
 	return t
 }
 
-func (t Type) Native() string {
+func (t *Type) Native() string {
+	if t.value != "" {
+		return t.value
+	}
+
 	if t.Iden != "" {
-		return t.Iden
+		t.value = t.Iden
+		return t.value
 	}
 
 	// map to a fix sized primitive, or a big integer if that is not possible
 	for _, size := range IntSizes {
 		if t.Bits <= size {
-			return fmt.Sprintf("int%d", size)
+			t.value = fmt.Sprintf("int%d", size)
+			return t.value
 		}
 	}
-	return "big.Int"
+	t.value = "big.Int"
+	return t.value
 }
