@@ -162,7 +162,7 @@ func (p *Parser) parseProperty() DefNode {
 	prop := DefNode{Kind: PropertyNodeKind}
 
 	forwardErr := func(err ParserError) DefNode {
-		prop.E = err.token().E
+		prop.End = err.token().End
 		prop.Poisoned = true
 		err.addKind(PropertyNodeKind)
 		p.skipUntilSentinel()
@@ -176,7 +176,7 @@ func (p *Parser) parseProperty() DefNode {
 	if err != nil {
 		panic(fmt.Sprintf("assertion error: %s", err))
 	}
-	prop.B = token.B
+	prop.Begin = token.Begin
 	prop.Iden = token.Value
 
 	if _, err := p.expect(TokEqual); err != nil {
@@ -187,7 +187,7 @@ func (p *Parser) parseProperty() DefNode {
 	if err != nil {
 		return forwardErr(err)
 	}
-	prop.E = token.E
+	prop.End = token.End
 	prop.Value = str
 
 	return prop
@@ -235,7 +235,7 @@ func (p *Parser) parseImport() DefNode {
 	imp := DefNode{Kind: ImportNodeKind}
 
 	forwardErr := func(err ParserError) DefNode {
-		imp.E = err.token().E
+		imp.End = err.token().End
 		imp.Poisoned = true
 		err.addKind(ImportNodeKind)
 		p.skipUntilSentinel()
@@ -249,13 +249,13 @@ func (p *Parser) parseImport() DefNode {
 	if err != nil {
 		panic(fmt.Sprintf("assertion error: %s", err))
 	}
-	imp.B = token.B
+	imp.Begin = token.Begin
 
 	pathStr, err := p.parseString(&token)
 	if err != nil {
 		return forwardErr(err)
 	}
-	imp.E = token.E
+	imp.End = token.End
 	imp.Value = pathStr
 
 	return imp
@@ -343,7 +343,7 @@ func (p *Parser) parseStruct(name string, nameOk bool) DefNode {
 	strct.Poisoned = !nameOk
 
 	forwardErr := func(err ParserError) {
-		strct.E = err.token().E
+		strct.End = err.token().End
 		strct.Poisoned = true
 		err.addKind(StructNodeKind)
 		p.skipUntilSentinel()
@@ -354,7 +354,7 @@ func (p *Parser) parseStruct(name string, nameOk bool) DefNode {
 	if err != nil {
 		panic(fmt.Sprintf("assertion error: in struct: %s", err))
 	}
-	strct.B = token.B
+	strct.Begin = token.Begin
 
 	typeParams, err := p.parseTypeParams()
 	if err != nil {
@@ -383,7 +383,7 @@ func (p *Parser) parseStruct(name string, nameOk bool) DefNode {
 			}
 			strct.LocalDefs = append(strct.LocalDefs, message)
 		case TokRBrace:
-			strct.E = token.E
+			strct.End = token.End
 			return strct
 		default:
 			forwardErr(makeExpectErr(token, TokField, TokMessage, TokRBrace))
@@ -398,7 +398,7 @@ func (p *Parser) parseField() MembNode {
 	field := MembNode{}
 
 	forwardErr := func(err ParserError) MembNode {
-		field.E = err.token().E
+		field.End = err.token().End
 		field.Poisoned = true
 		err.addKind(FieldNodeKind)
 		p.skipUntilSentinel()
@@ -411,7 +411,7 @@ func (p *Parser) parseField() MembNode {
 	var ord uint64
 
 	token = p.next()
-	field.B = token.B
+	field.Begin = token.Begin
 
 	switch token.Kind {
 	case TokRequired:
@@ -444,7 +444,7 @@ func (p *Parser) parseField() MembNode {
 	if !ok {
 		return forwardErr(makeExpectErr(firstToken, TokSemicolon))
 	}
-	field.E = firstToken.E
+	field.End = firstToken.End
 
 	return field
 }
@@ -454,7 +454,7 @@ func (p *Parser) parseUnion(name string, nameOk bool, size uint64) DefNode {
 	union.Poisoned = !nameOk
 
 	forwardErr := func(err ParserError) {
-		union.E = err.token().E
+		union.End = err.token().End
 		union.Poisoned = true
 		err.addKind(UnionNodeKind)
 		p.skipUntilSentinel()
@@ -465,7 +465,7 @@ func (p *Parser) parseUnion(name string, nameOk bool, size uint64) DefNode {
 	if err != nil {
 		panic(fmt.Sprintf("assertion error: in union: %s", err))
 	}
-	union.B = token.B
+	union.Begin = token.Begin
 
 	typeParams, err := p.parseTypeParams()
 	if err != nil {
@@ -494,7 +494,7 @@ func (p *Parser) parseUnion(name string, nameOk bool, size uint64) DefNode {
 			}
 			union.LocalDefs = append(union.LocalDefs, message)
 		case TokRBrace:
-			union.E = token.E
+			union.End = token.End
 			return union
 		default:
 			forwardErr(makeExpectErr(token, TokOption, TokMessage, TokRBrace))
@@ -509,7 +509,7 @@ func (p *Parser) parseOption() MembNode {
 	option := MembNode{}
 
 	forwardErr := func(err ParserError) MembNode {
-		option.E = err.token().E
+		option.End = err.token().End
 		option.Poisoned = true
 		err.addKind(OptionNodeKind)
 		p.skipUntilSentinel()
@@ -529,7 +529,7 @@ func (p *Parser) parseOption() MembNode {
 	if err != nil {
 		return forwardErr(err)
 	}
-	option.B = token.B
+	option.Begin = token.Begin
 	option.Ord = ord
 
 	typ, err := p.parseType()
@@ -542,7 +542,7 @@ func (p *Parser) parseOption() MembNode {
 	if !ok {
 		return forwardErr(makeExpectErr(firstToken, TokSemicolon))
 	}
-	option.E = firstToken.E
+	option.End = firstToken.End
 
 	return option
 }
@@ -552,7 +552,7 @@ func (p *Parser) parseEnum(name string, nameOk bool, size uint64) DefNode {
 	enum.Poisoned = !nameOk
 
 	forwardErr := func(err ParserError) {
-		enum.E = err.token().E
+		enum.End = err.token().End
 		enum.Poisoned = true
 		err.addKind(EnumNodeKind)
 		p.skipUntilSentinel()
@@ -563,7 +563,7 @@ func (p *Parser) parseEnum(name string, nameOk bool, size uint64) DefNode {
 	if err != nil {
 		panic(fmt.Sprintf("assertion error: in enum: %s", err))
 	}
-	enum.B = token.B
+	enum.Begin = token.Begin
 
 	if _, err := p.expect(TokLBrace); err != nil {
 		forwardErr(err)
@@ -577,7 +577,7 @@ func (p *Parser) parseEnum(name string, nameOk bool, size uint64) DefNode {
 			ec := p.parseCase()
 			enum.Members = append(enum.Members, ec)
 		case TokRBrace:
-			enum.E = token.E
+			enum.End = token.End
 			return enum
 		default:
 			forwardErr(makeExpectErr(token, TokCase, TokRBrace))
@@ -592,7 +592,7 @@ func (p *Parser) parseCase() MembNode {
 	ec := MembNode{}
 
 	forwardErr := func(err ParserError) MembNode {
-		ec.E = err.token().E
+		ec.End = err.token().End
 		ec.Poisoned = true
 		err.addKind(CaseNodeKind)
 		p.skipUntilSentinel()
@@ -607,7 +607,7 @@ func (p *Parser) parseCase() MembNode {
 		return forwardErr(err)
 	}
 	ec.Ord = ord
-	ec.B = token.B
+	ec.Begin = token.Begin
 
 	token, err = p.expect(TokIden)
 	if err != nil {
@@ -619,7 +619,7 @@ func (p *Parser) parseCase() MembNode {
 	if !ok {
 		return forwardErr(makeExpectErr(firstToken, TokSemicolon))
 	}
-	ec.E = firstToken.E
+	ec.End = firstToken.End
 
 	return ec
 }
@@ -744,7 +744,7 @@ func (p *Parser) parseType() (TypeNode, ParserError) {
 				Iden:      name,
 				Array:     array,
 				TypeArgs:  typeArgs,
-				Positions: Positions{B: tokenB.B, E: tokenE.E},
+				Positions: Positions{Begin: tokenB.Begin, End: tokenE.End},
 			}
 			return node, nil
 		default:
@@ -776,7 +776,7 @@ func (p *Parser) parseService() DefNode {
 	svc := DefNode{Kind: ServiceNodeKind}
 
 	forwardErr := func(err ParserError) {
-		svc.E = err.token().E
+		svc.End = err.token().End
 		svc.Poisoned = true
 		err.addKind(ServiceNodeKind)
 		p.skipUntilSentinel()
@@ -828,7 +828,7 @@ func (p *Parser) parseRpc() MembNode {
 	rpc := MembNode{}
 
 	forwardErr := func(err ParserError) MembNode {
-		rpc.E = err.token().E
+		rpc.End = err.token().End
 		rpc.Poisoned = true
 		err.addKind(RpcNodeKind)
 		p.skipUntilSentinel()
@@ -840,7 +840,7 @@ func (p *Parser) parseRpc() MembNode {
 	if err != nil {
 		panic(fmt.Sprintf("assertion error: in rpc: %s", err))
 	}
-	rpc.B = token.B
+	rpc.Begin = token.Begin
 
 	ord, err := p.parseOrd()
 	if err != nil {
@@ -877,7 +877,7 @@ func (p *Parser) parseRpc() MembNode {
 	if err != nil {
 		return forwardErr(err)
 	}
-	rpc.E = token.E
+	rpc.End = token.End
 
 	return rpc
 }

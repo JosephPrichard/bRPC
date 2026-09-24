@@ -22,7 +22,7 @@ const (
 	NumErrKind
 )
 
-type ParseErr struct {
+type ParsingError struct {
 	actual   Token
 	nodeKind NodeKind
 	expected []TokKind
@@ -31,33 +31,33 @@ type ParseErr struct {
 }
 
 func makeKindErr(actual Token, kind ParseErrKind) ParserError {
-	return &ParseErr{actual: actual, errKind: kind}
+	return &ParsingError{actual: actual, errKind: kind}
 }
 
 func makeExpectErr(actual Token, expected ...TokKind) ParserError {
-	return &ParseErr{actual: actual, expected: expected, errKind: ExpectErrKind}
+	return &ParsingError{actual: actual, expected: expected, errKind: ExpectErrKind}
 }
 
 func makeEscSeqErr(actual Token, escSeq rune) ParserError {
-	return &ParseErr{actual: actual, escSeq: escSeq, errKind: EscSeqErrKind}
+	return &ParsingError{actual: actual, escSeq: escSeq, errKind: EscSeqErrKind}
 }
 
-func (err *ParseErr) token() Token {
+func (err *ParsingError) token() Token {
 	return err.actual
 }
 
-func (err *ParseErr) addKind(kind NodeKind) {
+func (err *ParsingError) addKind(kind NodeKind) {
 	if err.nodeKind == NoNodeKind {
 		err.nodeKind = kind
 	}
 }
 
-func (err *ParseErr) withKind(kind NodeKind) ParserError {
+func (err *ParsingError) withKind(kind NodeKind) ParserError {
 	err.addKind(kind)
 	return err
 }
 
-func (err *ParseErr) Error() string {
+func (err *ParsingError) Error() string {
 	var sb strings.Builder
 
 	// header
@@ -188,7 +188,7 @@ func printErrors(errs []error, filePath string, printLine func(string)) {
 func clearErrors(errs []error) {
 	for _, err := range errs {
 		switch err := err.(type) {
-		case *ParseErr:
+		case *ParsingError:
 			err.actual.Positions = Positions{}
 		}
 	}

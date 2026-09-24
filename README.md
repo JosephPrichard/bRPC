@@ -36,7 +36,7 @@ message Game struct {
     required blackId @2 b128;
     required board @3 OthelloBoard; // compose a larger message from smaller messages, this is stored like we just copied the fields in here
     required moves @5 []Move; // a variable length array, the size will be packed into 4 bytes at the start of the array
-    optional result @6 GameResult; // a field can be optional, in which case it has 1 bit packed in front of it to represent if the data is present or not
+    optional result @6 GameResult; // a field can be optional, in which it may or may not exist in the message
 }
 ```
 

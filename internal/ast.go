@@ -78,21 +78,21 @@ func (m Modifier) String() string {
 }
 
 type Positions struct {
-	B int
-	E int
+	Begin int
+	End   int
 }
 
 func (r *Positions) Offset() string {
-	if r.B == r.E {
-		return fmt.Sprintf("%d:", r.B)
+	if r.Begin == r.End {
+		return fmt.Sprintf("%d:", r.Begin)
 	} else {
-		return fmt.Sprintf("%d:%d:", r.B, r.E)
+		return fmt.Sprintf("%d:%d:", r.Begin, r.End)
 	}
 }
 
-func (r *Positions) Clear() {
-	r.E = 0
-	r.B = 0
+func (r *Positions) ClearPositions() {
+	r.End = 0
+	r.Begin = 0
 }
 
 var DeclNodeKinds = []NodeKind{StructNodeKind, UnionNodeKind, EnumNodeKind, ServiceNodeKind}

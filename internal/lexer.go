@@ -175,7 +175,7 @@ func (lex *Lexer) span() string {
 }
 
 func (lex *Lexer) makePositions() Positions {
-	return Positions{B: lex.start, E: lex.curr}
+	return Positions{Begin: lex.start, End: lex.curr}
 }
 
 func (lex *Lexer) emit(kind TokKind) {

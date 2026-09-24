@@ -241,7 +241,7 @@ func TestParser_Errors(t *testing.T) {
 				},
 			},
 			errs: []error{
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokEof, Value: ""}, Positions{}},
 					nodeKind: StructNodeKind,
 					expected: []TokKind{TokField, TokMessage, TokRBrace},
@@ -270,7 +270,7 @@ func TestParser_Errors(t *testing.T) {
 				},
 			},
 			errs: []error{
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokEof, Value: ""}, Positions{}},
 					nodeKind: StructNodeKind,
 					expected: []TokKind{TokField, TokMessage, TokRBrace},
@@ -290,7 +290,7 @@ func TestParser_Errors(t *testing.T) {
 				},
 			},
 			errs: []error{
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokInteger, Value: "5", Num: 5}, Positions{}},
 					nodeKind: MessageNodeKind,
 					errKind:  SizeErrKind,
@@ -318,12 +318,12 @@ func TestParser_Errors(t *testing.T) {
 				},
 			},
 			errs: []error{
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokErr, Value: "5a", Expected: TokInteger}, Positions{}},
 					nodeKind: TypeNodeKind,
 					expected: []TokKind{TokInteger, TokRBrack},
 				},
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokIden, Value: "Data_1"}, Positions{}},
 					nodeKind: MessageNodeKind,
 					errKind:  IdenErrKind,
@@ -353,17 +353,17 @@ func TestParser_Errors(t *testing.T) {
 				},
 			},
 			errs: []error{
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokErr, Value: "@1abc", Expected: TokOrd}, Positions{}},
 					nodeKind: FieldNodeKind,
 					expected: []TokKind{TokOrd},
 				},
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokIden, Value: "two"}, Positions{}},
 					nodeKind: StructNodeKind,
 					expected: []TokKind{TokField, TokMessage, TokRBrace},
 				},
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokSemicolon, Value: ";"}, Positions{}},
 					nodeKind: FieldNodeKind,
 					expected: []TokKind{TokTypeRef},
@@ -404,17 +404,17 @@ func TestParser_Errors(t *testing.T) {
 				},
 			},
 			errs: []error{
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokSemicolon, Value: ";"}, Positions{}},
 					nodeKind: FieldNodeKind,
 					expected: []TokKind{TokTypeRef},
 				},
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokInteger, Value: "5", Num: 5}, Positions{}},
 					nodeKind: OptionNodeKind,
 					expected: []TokKind{TokTypeRef},
 				},
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokIden, Value: "Two"}, Positions{}},
 					nodeKind: OptionNodeKind,
 					expected: []TokKind{TokOrd},
@@ -437,12 +437,12 @@ func TestParser_Errors(t *testing.T) {
 				},
 			},
 			errs: []error{
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokInteger, Value: "2", Num: 2}, Positions{}},
 					nodeKind: CaseNodeKind,
 					expected: []TokKind{TokIden},
 				},
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokIden, Value: "THREE"}, Positions{}},
 					nodeKind: EnumNodeKind,
 					expected: []TokKind{TokCase, TokRBrace},
@@ -464,17 +464,17 @@ func TestParser_Errors(t *testing.T) {
 				},
 			},
 			errs: []error{
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokIden, Value: "one"}, Positions{}},
 					nodeKind: FieldNodeKind,
 					expected: []TokKind{TokOrd},
 				},
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokIden, Value: "two"}, Positions{}},
 					nodeKind: StructNodeKind,
 					expected: []TokKind{TokField, TokMessage, TokRBrace},
 				},
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokRBrace, Value: "}"}, Positions{}},
 					nodeKind: FieldNodeKind,
 					expected: []TokKind{TokSemicolon},
@@ -496,17 +496,17 @@ func TestParser_Errors(t *testing.T) {
 				},
 			},
 			errs: []error{
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokLParen, Value: "("}, Positions{}},
 					nodeKind: RpcNodeKind,
 					expected: []TokKind{TokReturns},
 				},
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokRequired, Value: "required"}, Positions{}},
 					nodeKind: ServiceNodeKind,
 					expected: []TokKind{TokRpc, TokMessage, TokRBrace},
 				},
-				&ParseErr{
+				&ParsingError{
 					actual:   Token{TokVal{Kind: TokRParen, Value: ")"}, Positions{}},
 					nodeKind: RpcNodeKind,
 					expected: []TokKind{TokTypeRef},

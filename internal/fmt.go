@@ -134,10 +134,10 @@ func FmtMemberList(sb *strings.Builder, kind NodeKind, nodes []MembNode, depth i
 func ClearNodeList(nodes []DefNode) {
 	for i := range nodes {
 		node := &nodes[i]
-		node.Clear()
+		node.ClearPositions()
 		for i := range node.Members {
 			node := &node.Members[i]
-			node.Clear()
+			node.ClearPositions()
 			ClearTypeNode(&node.LType)
 			ClearTypeNode(&node.RType)
 		}
@@ -146,7 +146,7 @@ func ClearNodeList(nodes []DefNode) {
 }
 
 func ClearTypeNode(node *TypeNode) {
-	node.Clear()
+	node.ClearPositions()
 	for i := range node.TypeArgs {
 		ClearTypeNode(&node.TypeArgs[i])
 	}
