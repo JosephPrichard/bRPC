@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 	"unicode"
@@ -17,8 +18,9 @@ const (
 	// TokIden etc. represent "variable" data that may need to be parsed later
 	TokIden
 	TokInteger
+	TokFloat
 	TokString
-	TokOrd
+	TokTag
 
 	// TokSemicolon etc. are special character tokens used to control termination of ASTs
 	TokSemicolon
@@ -67,9 +69,11 @@ func (k TokKind) String() string {
 		return "iden"
 	case TokInteger:
 		return "integer"
+	case TokFloat:
+		return "float"
 	case TokString:
 		return "string"
-	case TokOrd:
+	case TokTag:
 		return "ord"
 	case TokSemicolon:
 		return "';'"
@@ -118,21 +122,22 @@ func (k TokKind) String() string {
 	case TokTypeDef:
 		return "typedef"
 	case TokField:
-		return "field"
+		return "struct field"
 	case TokCase:
-		return "case"
+		return "enum case"
 	case TokOption:
-		return "option"
+		return "union option"
 	default:
-		panic(fmt.Sprintf("assertion error: unknown token: %d", k))
+		panic(fmt.Sprintf("assertion error: string func: unknown token: %d", k))
 	}
 }
 
 type TokVal struct {
 	Kind     TokKind
-	Value    string
+	Str      string
 	Expected TokKind // the expected token whenever an error is occurred, only populated for Kind of TokErr
-	Num      uint64  // only populated if the token has a numeric value (TokOrd, TokInteger)
+	Int      big.Int // populated for tokens with unbounded integer values (TokOrd, TokInteger)
+	Float64  float64 // populated for tokens with float values (TokFloat)
 }
 
 func (t TokVal) String() string {
@@ -142,7 +147,7 @@ func (t TokVal) String() string {
 	case TokEof:
 		return "<eof>"
 	default:
-		return t.Value
+		return t.Str
 	}
 }
 
@@ -178,10 +183,14 @@ func (lex *Lexer) makePositions() Positions {
 	return Positions{Begin: lex.start, End: lex.curr}
 }
 
+func (lex *Lexer) emitValue(tokVal TokVal) {
+	lex.tokens = append(lex.tokens, Token{tokVal, lex.makePositions()})
+	lex.skip()
+}
+
 func (lex *Lexer) emit(kind TokKind) {
 	value := lex.span()
-	lex.tokens = append(lex.tokens, Token{TokVal{Kind: kind, Value: value}, lex.makePositions()})
-	lex.skip()
+	lex.emitValue(TokVal{Kind: kind, Str: value})
 }
 
 func (lex *Lexer) emitText() {
@@ -213,14 +222,18 @@ func (lex *Lexer) emitText() {
 		kind = TokImport
 	}
 
-	lex.tokens = append(lex.tokens, Token{TokVal{Kind: kind, Value: str}, lex.makePositions()})
+	lex.tokens = append(lex.tokens, Token{TokVal{Kind: kind, Str: str}, lex.makePositions()})
 	lex.skip()
 }
 
-func (lex *Lexer) emitNumeric(kind TokKind, num uint64) {
+func (lex *Lexer) emitFloat(kind TokKind, f64 float64) {
 	value := lex.span()
-	lex.tokens = append(lex.tokens, Token{TokVal{Kind: kind, Value: value, Num: num}, lex.makePositions()})
-	lex.skip()
+	lex.emitValue(TokVal{Kind: kind, Str: value, Float64: f64})
+}
+
+func (lex *Lexer) emitInteger(kind TokKind, i big.Int) {
+	value := lex.span()
+	lex.emitValue(TokVal{Kind: kind, Str: value, Int: i})
 }
 
 func (lex *Lexer) emitNext(kind TokKind) {
@@ -228,7 +241,7 @@ func (lex *Lexer) emitNext(kind TokKind) {
 	lex.emit(kind)
 }
 
-func (lex *Lexer) emitErr(expected TokKind) {
+func (lex *Lexer) emitErr(expected TokKind) struct{} {
 	// scan until a sentinel symbol
 	if expected == TokComment {
 		lex.acceptUntil(newline)
@@ -237,10 +250,12 @@ func (lex *Lexer) emitErr(expected TokKind) {
 	}
 
 	value := lex.span()
-	token := Token{TokVal{Kind: TokErr, Value: value, Expected: expected}, lex.makePositions()}
+	token := Token{TokVal{Kind: TokErr, Str: value, Expected: expected}, lex.makePositions()}
 
 	lex.tokens = append(lex.tokens, token)
 	lex.skip()
+
+	return struct{}{}
 }
 
 func (lex *Lexer) consume() {
@@ -309,21 +324,40 @@ func (lex *Lexer) run() {
 	}
 }
 
-func (lex *Lexer) lexInteger() {
+func (lex *Lexer) lexNumeric() struct{} {
 	kind := TokInteger
-	lex.acceptWhile(numeric)
-	if !lex.assert(whitespace + control) {
-		lex.emitErr(kind)
-		return
+
+	for {
+		lex.acceptWhile(numeric)
+		if lex.accept(".") {
+			kind = TokFloat
+		} else if lex.assert(whitespace + control) {
+			break
+		} else {
+			// stop at first invalid non-numeric
+			return lex.emitErr(kind)
+		}
 	}
 
-	numStr := lex.span()
-	num, err := strconv.ParseUint(numStr, 10, 64)
-	if err != nil {
-		// we can panic here because the lexer should have stopped if there were any non-numerics
-		panic(fmt.Sprintf("assertion error: integer token is invalid: %v", err))
+	numericStr := lex.span()
+	switch kind {
+	case TokInteger:
+		i, ok := new(big.Int).SetString(numericStr, 10)
+		if !ok {
+			return lex.emitErr(kind)
+		}
+		lex.emitInteger(kind, *i)
+	case TokFloat:
+		f64, err := strconv.ParseFloat(numericStr, 64)
+		if err != nil {
+			return lex.emitErr(kind)
+		}
+		lex.emitFloat(kind, f64)
+	default:
+		panic(fmt.Sprintf("assertion error: numeric kind is unexpected: %s", kind))
 	}
-	lex.emitNumeric(TokInteger, num)
+
+	return struct{}{}
 }
 
 func (lex *Lexer) lexComment() {
@@ -336,26 +370,27 @@ func (lex *Lexer) lexComment() {
 	lex.skip()
 }
 
-func (lex *Lexer) lexOrd() {
-	kind := TokOrd
+func (lex *Lexer) lexTag() struct{} {
+	kind := TokTag
 	lex.next()
 	lex.acceptWhile(numeric)
 	if !lex.assert(whitespace + control) {
-		lex.emitErr(kind)
-		return
+		return lex.emitErr(kind)
 	}
 	if lex.curr-lex.start <= 1 {
-		lex.emitErr(kind)
-		return
+		return lex.emitErr(kind)
 	}
 
 	value := lex.span()
-	ord, strErr := strconv.ParseUint(value[1:], 10, 64)
-	if strErr != nil {
-		// we can panic here because the lexer should have stopped if there were any non-numerics
-		panic(fmt.Sprintf("assertion error: ord token is invalid: %v", strErr))
+
+	tagInt, ok := new(big.Int).SetString(value[1:], 10)
+	if !ok {
+		return lex.emitErr(kind)
 	}
-	lex.emitNumeric(TokOrd, ord)
+
+	lex.emitInteger(TokTag, *tagInt)
+
+	return struct{}{}
 }
 
 func (lex *Lexer) lexText() {
@@ -415,12 +450,12 @@ func (lex *Lexer) lex() bool {
 	case '/':
 		lex.lexComment()
 	case '@':
-		lex.lexOrd()
+		lex.lexTag()
 	case '"':
 		lex.lexString()
 	default:
 		if lex.accept(numeric) {
-			lex.lexInteger()
+			lex.lexNumeric()
 		} else if !unicode.IsControl(ch) && !unicode.IsPunct(ch) && !unicode.IsSpace(ch) {
 			lex.lexText()
 		} else {

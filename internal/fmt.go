@@ -29,7 +29,7 @@ func FmtDefList(sb *strings.Builder, nodes []DefNode, depth int) {
 			fmt.Fprintf(sb, "%s \"%s\"\n", node.Iden, node.Value)
 		case StructNodeKind:
 			fmtIndents(sb, depth)
-			fmt.Fprintf(sb, "message %s struct", node.Iden)
+			fmt.Fprintf(sb, "message %s struct ", node.Iden)
 			FmtTypeParams(sb, node.TypeParams)
 			sb.WriteString("{\n")
 			FmtMemberList(sb, node.Kind.MemberKind(), node.Members, depth+1)
@@ -38,7 +38,7 @@ func FmtDefList(sb *strings.Builder, nodes []DefNode, depth int) {
 			sb.WriteString("}\n")
 		case UnionNodeKind:
 			fmtIndents(sb, depth)
-			fmt.Fprintf(sb, "message %s union", node.Iden)
+			fmt.Fprintf(sb, "message %s union ", node.Iden)
 			FmtTypeParams(sb, node.TypeParams)
 			sb.WriteString("{\n")
 			FmtMemberList(sb, node.Kind.MemberKind(), node.Members, depth+1)
@@ -47,7 +47,7 @@ func FmtDefList(sb *strings.Builder, nodes []DefNode, depth int) {
 			sb.WriteString("}\n")
 		case EnumNodeKind:
 			fmtIndents(sb, depth)
-			fmt.Fprintf(sb, "message %s enum", node.Iden)
+			fmt.Fprintf(sb, "message %s enum ", node.Iden)
 			FmtTypeParams(sb, node.TypeParams)
 			sb.WriteString("{\n")
 			FmtMemberList(sb, node.Kind.MemberKind(), node.Members, depth+1)
@@ -71,7 +71,7 @@ func FmtTypeParams(sb *strings.Builder, typeParams []string) {
 		}
 		fmt.Fprintf(sb, "%s", param)
 		if i == len(typeParams)-1 {
-			sb.WriteString(")")
+			sb.WriteString(") ")
 		} else {
 			sb.WriteString(", ")
 		}
@@ -104,50 +104,51 @@ func FmtTypeArgs(sb *strings.Builder, typeArgs []TypeNode) {
 	}
 }
 
-func FmtMemberList(sb *strings.Builder, kind NodeKind, nodes []MembNode, depth int) {
+func FmtMemberList(sb *strings.Builder, kind NodeKind, nodes []MemberNode, depth int) {
 	for _, node := range nodes {
 		switch kind {
 		case FieldNodeKind:
 			fmtIndents(sb, depth)
-			fmt.Fprintf(sb, "%s %s @%d ", node.Modifier, node.Iden, node.Ord)
-			FmtType(sb, node.LType)
+			fmt.Fprintf(sb, "%s %s @%d ", node.Modifier, node.Iden, node.Tag)
+			FmtType(sb, node.LeftType)
 			sb.WriteString(";\n")
 		case CaseNodeKind:
 			fmtIndents(sb, depth)
-			fmt.Fprintf(sb, "@%d %s;\n", node.Ord, node.Iden)
+			fmt.Fprintf(sb, "@%d %s;\n", node.Tag, node.Iden)
 		case OptionNodeKind:
 			fmtIndents(sb, depth)
-			fmt.Fprintf(sb, "%s @%d ", node.Iden, node.Ord)
-			FmtType(sb, node.LType)
+			fmt.Fprintf(sb, "%s @%d ", node.Iden, node.Tag)
+			FmtType(sb, node.LeftType)
 			sb.WriteString(";\n")
 		case RpcNodeKind:
 			fmtIndents(sb, depth)
-			fmt.Fprintf(sb, "rpc @%d %s(", node.Ord, node.Iden)
-			FmtType(sb, node.LType)
+			fmt.Fprintf(sb, "rpc @%d %s(", node.Tag, node.Iden)
+			FmtType(sb, node.LeftType)
 			sb.WriteString(") returns (")
-			FmtType(sb, node.RType)
+			FmtType(sb, node.RightType)
 			sb.WriteString(");\n")
 		}
 	}
 }
 
-func ClearNodeList(nodes []DefNode) {
+func clearNodeList(nodes []DefNode) {
 	for i := range nodes {
 		node := &nodes[i]
 		node.ClearPositions()
 		for i := range node.Members {
 			node := &node.Members[i]
 			node.ClearPositions()
-			ClearTypeNode(&node.LType)
-			ClearTypeNode(&node.RType)
+			node.DefaultValue.ClearPositions()
+			clearTypeNode(&node.LeftType)
+			clearTypeNode(&node.RightType)
 		}
-		ClearNodeList(node.LocalDefs)
+		clearNodeList(node.LocalDefs)
 	}
 }
 
-func ClearTypeNode(node *TypeNode) {
+func clearTypeNode(node *TypeNode) {
 	node.ClearPositions()
 	for i := range node.TypeArgs {
-		ClearTypeNode(&node.TypeArgs[i])
+		clearTypeNode(&node.TypeArgs[i])
 	}
 }

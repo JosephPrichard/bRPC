@@ -4,7 +4,12 @@ import (
 	"slices"
 )
 
-func transformDefList(nodes []DefNode, prev *TypeDefStack, errs *[]error) {
+func runValidator(nodes []DefNode, validateErrs *[]ValidateErr) {
+	transformDefList(nodes, nil, validateErrs)
+	validateDefList(nodes, validateErrs)
+}
+
+func transformDefList(nodes []DefNode, prev *TypeDefStack, errs *[]ValidateErr) {
 	stack := makeTypeDefStack(prev)
 	for i := range nodes {
 		node := &nodes[i]
@@ -12,7 +17,7 @@ func transformDefList(nodes []DefNode, prev *TypeDefStack, errs *[]error) {
 			continue
 		}
 
-		if err := stack.insert(node.Iden, node); err != nil {
+		if err := stack.insert(node.Iden, node); err.isPresent() {
 			*errs = append(*errs, err)
 		}
 		node.DefStack = stack
@@ -22,44 +27,46 @@ func transformDefList(nodes []DefNode, prev *TypeDefStack, errs *[]error) {
 			node := &node.Members[i]
 			switch kind {
 			case FieldNodeKind, OptionNodeKind:
-				transformType(&node.LType)
+				transformType(&node.LeftType)
 			case RpcNodeKind:
-				transformType(&node.LType)
-				transformType(&node.RType)
+				transformType(&node.LeftType)
+				transformType(&node.RightType)
 			}
 		}
-		slices.SortFunc(node.Members, func(n1, n2 MembNode) int { return int(n1.Ord - n2.Ord) })
+		slices.SortFunc(node.Members, func(n1, n2 MemberNode) int { return int(n1.Tag - n2.Tag) })
 
 		transformDefList(node.LocalDefs, stack, errs)
 	}
 }
 
 func transformType(node *TypeNode) {
-	node.Value = makeType(node.Iden)
+	node.TypeValue = makeTypeValue(node.Iden)
 	for i := range node.TypeArgs {
 		transformType(&node.TypeArgs[i])
 	}
 }
 
-func validateDefList(defs []DefNode, errs *[]error) {
-	for i := range defs {
-		def := &defs[i]
+func validateDefList(nodes []DefNode, errs *[]ValidateErr) {
+	for i := range nodes {
+		def := &nodes[i]
 		kind := def.Kind.MemberKind()
 		if !def.Kind.isTypeDecl() {
 			continue
 		}
 
-		expOrd := uint64(1)
+		// invariant: def.Members is sorted by tag
+		expTag := uint64(1)
 		for _, mem := range def.Members {
-			ord := mem.Ord
-			if ord != expOrd {
-				*errs = append(*errs, makeOrdErr(kind, mem.Positions, expOrd, ord))
+			tag := mem.Tag
+			if tag != expTag {
+				*errs = append(*errs, makeTagErr(kind, mem.Positions, expTag, tag))
 				break
 			}
-			expOrd++
+			expTag++
 		}
 		for i, mem := range def.Members {
 			idenR := mem.Iden
+			// note(Joseph): def.Members is expected to be small, so brute force search is acceptable
 			for j := i - 1; j >= 0; j-- {
 				idenL := def.Members[j].Iden
 				if idenR == idenL {
@@ -75,10 +82,10 @@ func validateDefList(defs []DefNode, errs *[]error) {
 		for _, mem := range def.Members {
 			switch kind {
 			case FieldNodeKind, OptionNodeKind:
-				validateType(kind, mem.LType, def, errs)
+				validateType(kind, mem.LeftType, def, errs)
 			case RpcNodeKind:
-				validateType(kind, mem.LType, def, errs)
-				validateType(kind, mem.RType, def, errs)
+				validateType(kind, mem.LeftType, def, errs)
+				validateType(kind, mem.RightType, def, errs)
 			}
 		}
 
@@ -86,11 +93,11 @@ func validateDefList(defs []DefNode, errs *[]error) {
 	}
 }
 
-func validateType(kind NodeKind, node TypeNode, parent *DefNode, errs *[]error) {
-	if node.Value.Primitive {
+func validateType(kind NodeKind, node TypeNode, parent *DefNode, errs *[]ValidateErr) {
+	if node.TypeValue.Primitive {
 		return
 	}
-	iden := node.Value.Native()
+	iden := node.TypeValue.Native()
 	def := resolveIden(parent, iden)
 	if def == nil {
 		*errs = append(*errs, makeUndefErr(kind, node.Positions, iden))
@@ -104,3 +111,4 @@ func validateType(kind NodeKind, node TypeNode, parent *DefNode, errs *[]error) 
 		validateType(kind, arg, parent, errs)
 	}
 }
+

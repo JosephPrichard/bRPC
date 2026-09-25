@@ -9,12 +9,12 @@ func makeTypeParamStack(prev *TypeParamStack) *TypeParamStack {
 	return &TypeParamStack{m: make(map[string]*TypeNode), prev: prev}
 }
 
-func (t *TypeParamStack) insert(iden string, node *TypeNode) error {
+func (t *TypeParamStack) insert(iden string, node *TypeNode) ValidateErr {
 	if _, exists := t.m[iden]; exists {
 		return makeRedefErr(TypeNodeKind, node.Positions, iden)
 	}
 	t.m[iden] = node
-	return nil
+	return ValidateErr{}
 }
 
 func (t *TypeParamStack) resolve(iden string) *TypeNode {
@@ -38,12 +38,12 @@ func makeTypeDefStack(prev *TypeDefStack) *TypeDefStack {
 	return &TypeDefStack{m: make(map[string]*DefNode), prev: prev}
 }
 
-func (t *TypeDefStack) insert(iden string, node *DefNode) error {
+func (t *TypeDefStack) insert(iden string, node *DefNode) ValidateErr {
 	if _, exists := t.m[iden]; exists {
 		return makeRedefErr(node.Kind, node.Positions, iden)
 	}
 	t.m[iden] = node
-	return nil
+	return ValidateErr{}
 }
 
 func (t *TypeDefStack) resolve(iden string) *DefNode {

@@ -30,7 +30,7 @@ func isPrimitive(iden string) bool {
 
 var IntSizes = []int{8, 16, 32, 64}
 
-func makeType(iden string) Type {
+func makeTypeValue(iden string) Type {
 	t := Type{Iden: iden, Primitive: isPrimitive(iden)}
 
 	index := strings.Index(iden, "int")
@@ -50,10 +50,12 @@ func makeType(iden string) Type {
 }
 
 func (t *Type) Native() string {
+	// reuse computed value if it exists
 	if t.value != "" {
 		return t.value
 	}
 
+	// if iden is present type value is always an iden
 	if t.Iden != "" {
 		t.value = t.Iden
 		return t.value

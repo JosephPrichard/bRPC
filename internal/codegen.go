@@ -10,11 +10,11 @@ type CodeBuilder struct {
 	sb          strings.Builder
 	propTable   PropTable
 	importTable ImportTable
-	errs        *[]error
+	errs        *[]ValidateErr
 }
 
-func makeCodeBuilder(propTable PropTable, importTable ImportTable, errs *[]error) CodeBuilder {
-	return CodeBuilder{propTable: propTable, importTable: importTable, errs: errs}
+func makeCodeBuilder(propTable PropTable, importTable ImportTable) CodeBuilder {
+	return CodeBuilder{propTable: propTable, importTable: importTable}
 }
 
 // this operation is common enough to extract it out to a utility function
@@ -61,7 +61,7 @@ func (b *CodeBuilder) buildType(t TypeNode) {
 		}
 		b.write("]")
 	}
-	b.write(t.Value.Native())
+	b.write(t.TypeValue.Native())
 }
 
 func (b *CodeBuilder) buildStruct(strct DefNode) {
@@ -73,7 +73,7 @@ func (b *CodeBuilder) buildStruct(strct DefNode) {
 		b.write("\t")
 		b.writeIden(field.Iden)
 		b.write("\t")
-		b.buildType(field.LType)
+		b.buildType(field.LeftType)
 		b.write("\n")
 	}
 	b.write("}\n\n")
@@ -111,7 +111,7 @@ func (b *CodeBuilder) buildUnion(union DefNode) {
 		b.write("\t")
 		b.writeIden(option.Iden)
 		b.write("\t*")
-		b.buildType(option.LType)
+		b.buildType(option.LeftType)
 		b.write("\n")
 	}
 	b.write("}\n\n")
@@ -151,20 +151,11 @@ func (b *CodeBuilder) buildPackage(pack string) {
 	b.write("\n\n")
 }
 
-func runCodeBuilder(program string, pack string, errs *[]error) string {
-	nodes := runParser(program, errs)
-
+func runCodeBuilder(nodes []DefNode, pack string) string {
 	importTable := makeImportTable()
 	propTable := makePropTable(nodes)
 
-	transformDefList(nodes, nil, errs)
-	validateDefList(nodes, errs)
-
-	if len(*errs) > 0 {
-		return ""
-	}
-
-	b := makeCodeBuilder(propTable, importTable, errs)
+	b := makeCodeBuilder(propTable, importTable)
 	b.buildPackage(pack)
 	b.buildNodeList(nodes)
 

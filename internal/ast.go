@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"math/big"
 	"slices"
 )
 
@@ -21,6 +22,7 @@ const (
 	ServiceNodeKind
 	RpcNodeKind
 	TypeNodeKind
+	ValueNodeKind
 )
 
 func (kind NodeKind) String() string {
@@ -40,27 +42,29 @@ func (kind NodeKind) String() string {
 	case UnionNodeKind:
 		return "union"
 	case FieldNodeKind:
-		return "field"
+		return "struct field"
 	case CaseNodeKind:
-		return "case"
+		return "enum case"
 	case OptionNodeKind:
-		return "option"
+		return "union option"
 	case ServiceNodeKind:
 		return "service"
 	case RpcNodeKind:
 		return "rpc"
 	case TypeNodeKind:
 		return "type"
+	case ValueNodeKind:
+		return "value"
 	default:
-		panic(fmt.Sprintf("assertion error: unknown NodeKind: %d", kind))
+		panic(fmt.Sprintf("assertion error: string func: unknown NodeKind: %d", kind))
 	}
 }
 
 type Modifier int
 
 const (
-	Required Modifier = iota
-	Optional
+	Optional Modifier = iota
+	Required
 	Deprecated
 )
 
@@ -121,28 +125,46 @@ type DefNode struct {
 	Poisoned   bool
 	Iden       string
 	Value      string
-	DefStack   *TypeDefStack
-	Members    []MembNode
+	Members    []MemberNode
 	TypeParams []string
 	LocalDefs  []DefNode
 	Size       uint64
+
+	DefStack *TypeDefStack
 }
 
-type MembNode struct {
+type MemberNode struct {
+	Positions
+	Poisoned     bool
+	Tag          uint64
+	Iden         string
+	Modifier     Modifier
+	LeftType     TypeNode
+	RightType    TypeNode
+	DefaultValue ValueNode
+}
+
+type TypeInstanceKind int
+
+const (
+	StringInstanceKind TypeInstanceKind = iota
+	IntInstanceKind
+	Float64InstanceKind
+)
+
+type ValueNode struct {
 	Positions
 	Poisoned bool
-	Ord      uint64
-	Iden     string
-	Modifier Modifier
-	LType    TypeNode
-	RType    TypeNode
-	TypeIden string
+	Kind     TypeInstanceKind
+	Str      string
+	Int      big.Int
+	Float64  float64
 }
 
 type TypeNode struct {
 	Positions
-	Value    Type
-	Iden     string
-	TypeArgs []TypeNode
-	Array    []uint64
+	TypeValue Type
+	Iden      string
+	TypeArgs  []TypeNode
+	Array     []uint64
 }
