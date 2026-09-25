@@ -2,6 +2,7 @@ package internal
 
 import (
 	"slices"
+	"unicode"
 )
 
 func runValidator(nodes []DefNode, validateErrs *[]ValidateErr) {
@@ -13,7 +14,7 @@ func transformDefList(nodes []DefNode, prev *TypeDefStack, errs *[]ValidateErr) 
 	stack := makeTypeDefStack(prev)
 	for i := range nodes {
 		node := &nodes[i]
-		if !node.Kind.isTypeDecl() {
+		if !node.Kind.isTypeDef() {
 			continue
 		}
 
@@ -48,48 +49,53 @@ func transformType(node *TypeNode) {
 
 func validateDefList(nodes []DefNode, errs *[]ValidateErr) {
 	for i := range nodes {
-		def := &nodes[i]
-		kind := def.Kind.MemberKind()
-		if !def.Kind.isTypeDecl() {
+		defNode := &nodes[i]
+		memberKind := defNode.Kind.MemberKind()
+		if !defNode.Kind.isTypeDef() {
 			continue
+		}
+
+		nameOk := validateMessageName(defNode.Iden)
+		if !nameOk {
+			*errs = append(*errs, makeNameErr(defNode.Kind, defNode.Positions, defNode.Iden))
 		}
 
 		// invariant: def.Members is sorted by tag
 		expTag := uint64(1)
-		for _, mem := range def.Members {
-			tag := mem.Tag
+		for _, memberNode := range defNode.Members {
+			tag := memberNode.Tag
 			if tag != expTag {
-				*errs = append(*errs, makeTagErr(kind, mem.Positions, expTag, tag))
+				*errs = append(*errs, makeTagErr(memberKind, memberNode.Positions, expTag, tag))
 				break
 			}
 			expTag++
 		}
-		for i, mem := range def.Members {
-			idenR := mem.Iden
+		for i, mem := range defNode.Members {
+			rightIden := mem.Iden
 			// note(Joseph): def.Members is expected to be small, so brute force search is acceptable
 			for j := i - 1; j >= 0; j-- {
-				idenL := def.Members[j].Iden
-				if idenR == idenL {
-					*errs = append(*errs, makeRedefErr(kind, mem.Positions, idenR))
+				leftIden := defNode.Members[j].Iden
+				if rightIden == leftIden {
+					*errs = append(*errs, makeRedefErr(memberKind, mem.Positions, rightIden))
 				}
 			}
 		}
 
-		if def.Kind == EnumNodeKind {
+		if defNode.Kind == EnumNodeKind {
 			continue
 		}
 
-		for _, mem := range def.Members {
-			switch kind {
+		for _, mem := range defNode.Members {
+			switch memberKind {
 			case FieldNodeKind, OptionNodeKind:
-				validateType(kind, mem.LeftType, def, errs)
+				validateType(memberKind, mem.LeftType, defNode, errs)
 			case RpcNodeKind:
-				validateType(kind, mem.LeftType, def, errs)
-				validateType(kind, mem.RightType, def, errs)
+				validateType(memberKind, mem.LeftType, defNode, errs)
+				validateType(memberKind, mem.RightType, defNode, errs)
 			}
 		}
 
-		validateDefList(def.LocalDefs, errs)
+		validateDefList(defNode.LocalDefs, errs)
 	}
 }
 
@@ -112,3 +118,14 @@ func validateType(kind NodeKind, node TypeNode, parent *DefNode, errs *[]Validat
 	}
 }
 
+func validateMessageName(name string) bool {
+	for i, c := range name {
+		if i == 0 && unicode.IsLower(c) {
+			return false
+		}
+		if !unicode.IsLetter(c) && !unicode.IsNumber(c) {
+			return false
+		}
+	}
+	return true
+}

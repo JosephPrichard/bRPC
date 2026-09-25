@@ -99,10 +99,10 @@ func (r *Positions) ClearPositions() {
 	r.Begin = 0
 }
 
-var DeclNodeKinds = []NodeKind{StructNodeKind, UnionNodeKind, EnumNodeKind, ServiceNodeKind}
+var DefNodeKinds = []NodeKind{StructNodeKind, UnionNodeKind, EnumNodeKind, ServiceNodeKind}
 
-func (k NodeKind) isTypeDecl() bool {
-	return slices.Contains(DeclNodeKinds, k)
+func (k NodeKind) isTypeDef() bool {
+	return slices.Contains(DefNodeKinds, k)
 }
 
 func (k NodeKind) MemberKind() NodeKind {
@@ -120,39 +120,44 @@ func (k NodeKind) MemberKind() NodeKind {
 }
 
 type DefNode struct {
+	// L1 (parse)
 	Positions
 	Kind       NodeKind
 	Poisoned   bool
-	Iden       string
-	Value      string
-	Members    []MemberNode
-	TypeParams []string
-	LocalDefs  []DefNode
-	Size       uint64
+	Iden       string       // Every node kind has an identifier
+	StrValue   string       // Property/Import value
+	Members    []MemberNode // Elements of Structs/Unions/Enums/Services
+	TypeParams []string     // Paramterization for Structs/Unions/Enums/Services
+	LocalDefs  []DefNode    // Recursively definitions for Structs/Unions/Enums/Services
+	Size       uint64       // Enum/Union sizes
 
+	// L2 (transform)
 	DefStack *TypeDefStack
 }
 
 type MemberNode struct {
+	// L1 (parse)
 	Positions
 	Poisoned     bool
-	Tag          uint64
 	Iden         string
-	Modifier     Modifier
-	LeftType     TypeNode
-	RightType    TypeNode
-	DefaultValue ValueNode
+	Tag          uint64    // Tag used for data node kinds (Field/Option/Enum)
+	Modifier     Modifier  // Prefix value for Fields only
+	LeftType     TypeNode  // Argument type for Rpc, Primary type for Option and Field
+	RightType    TypeNode  // Return type for Rpc
+	DefaultValue ValueNode // Literal value for Field
 }
 
 type TypeInstanceKind int
 
 const (
-	StringInstanceKind TypeInstanceKind = iota
+	NoInstanceKind TypeInstanceKind = iota
+	StringInstanceKind
 	IntInstanceKind
 	Float64InstanceKind
 )
 
 type ValueNode struct {
+	// L1 (parse)
 	Positions
 	Poisoned bool
 	Kind     TypeInstanceKind
@@ -162,9 +167,12 @@ type ValueNode struct {
 }
 
 type TypeNode struct {
+	// L1 (parse)
 	Positions
+	Iden     string
+	TypeArgs []TypeNode
+	Array    []uint64
+
+	// L2 (transform)
 	TypeValue Type
-	Iden      string
-	TypeArgs  []TypeNode
-	Array     []uint64
 }

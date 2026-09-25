@@ -5,150 +5,185 @@ import (
 	"strings"
 )
 
-func FmtAst(nodes []DefNode) string {
-	var sb strings.Builder
-	FmtDefList(&sb, nodes, 0)
-	return sb.String()
+type FmtAstConfig struct {
+	ShouldPrintLines bool
 }
 
-func fmtIndents(sb *strings.Builder, depth int) {
+var DefaultFmtAstConfig = FmtAstConfig{ShouldPrintLines: false}
+
+func FmtAst(nodes []DefNode) string {
+	return FmtAstWithConfig(nodes, &DefaultFmtAstConfig)
+}
+
+func FmtAstWithConfig(nodes []DefNode, config *FmtAstConfig) string {
+	if config == nil {
+		config = &DefaultFmtAstConfig
+	}
+
+	state := &FmtAstState{
+		sb:         strings.Builder{},
+		lineNumber: 1,
+	}
+	if !config.ShouldPrintLines {
+		state.lineNumber = -1
+	}
+
+	addLine(state)
+	FmtDefList(state, nodes, 0)
+
+	return state.sb.String()
+}
+
+type FmtAstState struct {
+	sb strings.Builder
+	lineNumber int
+}
+
+func fmtIndents(state *FmtAstState, depth int) {
 	for range depth {
-		sb.WriteString("\t")
+		state.sb.WriteString("\t")
 	}
 }
 
-func FmtDefList(sb *strings.Builder, nodes []DefNode, depth int) {
+func addLine(state *FmtAstState) {
+	if state.lineNumber < 0 {
+		state.sb.WriteString("\n")
+	} else {
+		prefix := "\n"
+		if state.lineNumber == 1{
+			prefix = ""
+		}
+		// note(Joseph): if the number gets over 4 digits, this will look weird.
+		fmt.Fprintf(&state.sb, "%s%4d ", prefix, state.lineNumber)
+		state.lineNumber++
+	}
+}
+
+func FmtDefList(state *FmtAstState, nodes []DefNode, depth int) {
 	for _, node := range nodes {
-		if depth != 0 && node.Kind.isTypeDecl() {
-			sb.WriteString("\n")
+		if depth != 0 && node.Kind.isTypeDef() {
+			addLine(state)
 		}
 		switch node.Kind {
 		case ImportNodeKind:
-			fmt.Fprintf(sb, "import \"%s\"\n", node.Value)
+			fmt.Fprintf(&state.sb, "import \"%s\"", node.StrValue)
+			addLine(state)
 		case PropertyNodeKind:
-			fmt.Fprintf(sb, "%s \"%s\"\n", node.Iden, node.Value)
+			fmt.Fprintf(&state.sb, "%s \"%s\"", node.Iden, node.StrValue)
+			addLine(state)
 		case StructNodeKind:
-			fmtIndents(sb, depth)
-			fmt.Fprintf(sb, "message %s struct ", node.Iden)
-			FmtTypeParams(sb, node.TypeParams)
-			sb.WriteString("{\n")
-			FmtMemberList(sb, node.Kind.MemberKind(), node.Members, depth+1)
-			FmtDefList(sb, node.LocalDefs, depth+1)
-			fmtIndents(sb, depth)
-			sb.WriteString("}\n")
+			fmtIndents(state, depth)
+			fmt.Fprintf(&state.sb, "message %s struct ", node.Iden)
+			FmtTypeParams(state, node.TypeParams)
+			state.sb.WriteString("{")
+			addLine(state)
+			FmtMemberList(state, node.Kind.MemberKind(), node.Members, depth+1)
+			FmtDefList(state, node.LocalDefs, depth+1)
+			fmtIndents(state, depth)
+			state.sb.WriteString("}")
+			addLine(state)
 		case UnionNodeKind:
-			fmtIndents(sb, depth)
-			fmt.Fprintf(sb, "message %s union ", node.Iden)
-			FmtTypeParams(sb, node.TypeParams)
-			sb.WriteString("{\n")
-			FmtMemberList(sb, node.Kind.MemberKind(), node.Members, depth+1)
-			FmtDefList(sb, node.LocalDefs, depth+1)
-			fmtIndents(sb, depth)
-			sb.WriteString("}\n")
+			fmtIndents(state, depth)
+			fmt.Fprintf(&state.sb, "message %s union ", node.Iden)
+			FmtTypeParams(state, node.TypeParams)
+			state.sb.WriteString("{")
+			addLine(state)
+			FmtMemberList(state, node.Kind.MemberKind(), node.Members, depth+1)
+			FmtDefList(state, node.LocalDefs, depth+1)
+			fmtIndents(state, depth)
+			state.sb.WriteString("}")
+			addLine(state)
 		case EnumNodeKind:
-			fmtIndents(sb, depth)
-			fmt.Fprintf(sb, "message %s enum ", node.Iden)
-			FmtTypeParams(sb, node.TypeParams)
-			sb.WriteString("{\n")
-			FmtMemberList(sb, node.Kind.MemberKind(), node.Members, depth+1)
-			fmtIndents(sb, depth)
-			sb.WriteString("}\n")
+			fmtIndents(state, depth)
+			fmt.Fprintf(&state.sb, "message %s enum ", node.Iden)
+			FmtTypeParams(state, node.TypeParams)
+			state.sb.WriteString("{")
+			addLine(state)
+			FmtMemberList(state, node.Kind.MemberKind(), node.Members, depth+1)
+			fmtIndents(state, depth)
+			state.sb.WriteString("}")
+			addLine(state)
 		case ServiceNodeKind:
-			fmtIndents(sb, depth)
-			fmt.Fprintf(sb, "service %s {\n", node.Iden)
-			FmtMemberList(sb, node.Kind.MemberKind(), node.Members, depth+1)
-			FmtDefList(sb, node.LocalDefs, depth+1)
-			fmtIndents(sb, depth)
-			sb.WriteString("}\n")
+			fmtIndents(state, depth)
+			fmt.Fprintf(&state.sb, "service %s {", node.Iden)
+			addLine(state)
+			FmtMemberList(state, node.Kind.MemberKind(), node.Members, depth+1)
+			FmtDefList(state, node.LocalDefs, depth+1)
+			fmtIndents(state, depth)
+			state.sb.WriteString("}")
+			addLine(state)
 		}
 	}
 }
 
-func FmtTypeParams(sb *strings.Builder, typeParams []string) {
+func FmtTypeParams(state *FmtAstState, typeParams []string) {
 	for i, param := range typeParams {
 		if i == 0 {
-			sb.WriteString("(")
+			state.sb.WriteString("(")
 		}
-		fmt.Fprintf(sb, "%s", param)
+		fmt.Fprintf(&state.sb, "%s", param)
 		if i == len(typeParams)-1 {
-			sb.WriteString(") ")
+			state.sb.WriteString(") ")
 		} else {
-			sb.WriteString(", ")
+			state.sb.WriteString(", ")
 		}
 	}
 }
 
-func FmtType(sb *strings.Builder, node TypeNode) {
+func FmtType(state *FmtAstState, node TypeNode) {
 	for _, size := range node.Array {
 		if size != 0 {
-			fmt.Fprintf(sb, "[%d]", size)
+			fmt.Fprintf(&state.sb, "[%d]", size)
 		} else {
-			sb.WriteString("[]")
+			state.sb.WriteString("[]")
 		}
 	}
-	sb.WriteString(node.Iden)
-	FmtTypeArgs(sb, node.TypeArgs)
+	state.sb.WriteString(node.Iden)
+	FmtTypeArgs(state, node.TypeArgs)
 }
 
-func FmtTypeArgs(sb *strings.Builder, typeArgs []TypeNode) {
+func FmtTypeArgs(state *FmtAstState, typeArgs []TypeNode) {
 	for i, arg := range typeArgs {
 		if i == 0 {
-			sb.WriteString("(")
+			state.sb.WriteString("(")
 		}
-		FmtType(sb, arg)
+		FmtType(state, arg)
 		if i == len(typeArgs)-1 {
-			sb.WriteString(")")
+			state.sb.WriteString(")")
 		} else {
-			sb.WriteString(", ")
+			state.sb.WriteString(", ")
 		}
 	}
 }
 
-func FmtMemberList(sb *strings.Builder, kind NodeKind, nodes []MemberNode, depth int) {
+func FmtMemberList(state *FmtAstState, kind NodeKind, nodes []MemberNode, depth int) {
 	for _, node := range nodes {
 		switch kind {
 		case FieldNodeKind:
-			fmtIndents(sb, depth)
-			fmt.Fprintf(sb, "%s %s @%d ", node.Modifier, node.Iden, node.Tag)
-			FmtType(sb, node.LeftType)
-			sb.WriteString(";\n")
+			fmtIndents(state, depth)
+			fmt.Fprintf(&state.sb, "%s %s @%d ", node.Modifier, node.Iden, node.Tag)
+			FmtType(state, node.LeftType)
+			state.sb.WriteString(";")
+			addLine(state)
 		case CaseNodeKind:
-			fmtIndents(sb, depth)
-			fmt.Fprintf(sb, "@%d %s;\n", node.Tag, node.Iden)
+			fmtIndents(state, depth)
+			fmt.Fprintf(&state.sb, "@%d %s;", node.Tag, node.Iden)
+			addLine(state)
 		case OptionNodeKind:
-			fmtIndents(sb, depth)
-			fmt.Fprintf(sb, "%s @%d ", node.Iden, node.Tag)
-			FmtType(sb, node.LeftType)
-			sb.WriteString(";\n")
+			fmtIndents(state, depth)
+			fmt.Fprintf(&state.sb, "%s @%d ", node.Iden, node.Tag)
+			FmtType(state, node.LeftType)
+			state.sb.WriteString(";")
+			addLine(state)
 		case RpcNodeKind:
-			fmtIndents(sb, depth)
-			fmt.Fprintf(sb, "rpc @%d %s(", node.Tag, node.Iden)
-			FmtType(sb, node.LeftType)
-			sb.WriteString(") returns (")
-			FmtType(sb, node.RightType)
-			sb.WriteString(");\n")
+			fmtIndents(state, depth)
+			fmt.Fprintf(&state.sb, "rpc @%d %s(", node.Tag, node.Iden)
+			FmtType(state, node.LeftType)
+			state.sb.WriteString(") returns (")
+			FmtType(state, node.RightType)
+			// state.sb.WriteString(");")
+			state.sb.WriteString(")")
+			addLine(state)
 		}
-	}
-}
-
-func clearNodeList(nodes []DefNode) {
-	for i := range nodes {
-		node := &nodes[i]
-		node.ClearPositions()
-		for i := range node.Members {
-			node := &node.Members[i]
-			node.ClearPositions()
-			node.DefaultValue.ClearPositions()
-			clearTypeNode(&node.LeftType)
-			clearTypeNode(&node.RightType)
-		}
-		clearNodeList(node.LocalDefs)
-	}
-}
-
-func clearTypeNode(node *TypeNode) {
-	node.ClearPositions()
-	for i := range node.TypeArgs {
-		clearTypeNode(&node.TypeArgs[i])
 	}
 }

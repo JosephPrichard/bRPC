@@ -82,7 +82,7 @@ func makePropTable(nodes []DefNode) PropTable {
 			continue
 		}
 		if !node.Poisoned {
-			propTable[node.Iden] = node.Value
+			propTable[node.Iden] = node.StrValue
 		}
 	}
 	return propTable

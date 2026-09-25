@@ -4,37 +4,35 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"unicode"
 )
 
 type Parser struct {
 	tokens    []Token
 	curr      int
 	nodes     []DefNode
-	errs      *[]ParseError
+	errs      []ParseError
 	hasEofErr bool // stores whether an error has been emitted after token stream has reached eof
 }
 
-func makeParser(tokens []Token, errs *[]ParseError) Parser {
-	return Parser{tokens: tokens, hasEofErr: false, errs: errs}
+func makeParser(tokens []Token) Parser {
+	return Parser{tokens: tokens, hasEofErr: false, errs: make([]ParseError, 0)}
 }
 
-func runParser(program string, errs *[]ParseError) []DefNode {
+func runParser(program string) ([]DefNode, []ParseError) {
 	lex := makeLexer(program)
 	lex.run()
 
-	p := makeParser(lex.tokens, errs)
+	p := makeParser(lex.tokens)
 	p.parse()
 
-	return p.nodes
+	return p.nodes, p.errs
 }
 
 func parseOrElse(program string) []DefNode {
-	var errs []ParseError
-	nodes := runParser(program, &errs)
+	nodes, errs := runParser(program)
 
 	if len(errs) > 0 {
-		panic(errs)
+		panic(fmt.Sprintf("%+v", errs))
 	}
 
 	return nodes
@@ -131,10 +129,11 @@ func (p *Parser) skipUntilFieldSentinel() {
 }
 
 func (p *Parser) emitError(err ParseError) {
-	if !p.hasEofErr {
-		// don't emit anymore errors if a single err has been emitted after reaching eof
-		*p.errs = append(*p.errs, err)
+	if p.hasEofErr {
+		return
 	}
+	// don't emit anymore errors if a single eof err has been reached
+	p.errs = append(p.errs, err)
 	p.hasEofErr = p.peek().Kind == TokEof
 }
 
@@ -178,15 +177,15 @@ func (p *Parser) parseRoot() (DefNode, ParseError) {
 }
 
 func (p *Parser) parseProperty() DefNode {
-	prop := DefNode{Kind: PropertyNodeKind}
+	propertyNode := DefNode{Kind: PropertyNodeKind}
 
 	propagate := func(err ParseError) DefNode {
-		prop.End = err.actualToken.End
-		prop.Poisoned = true
+		propertyNode.End = err.actualToken.End
+		propertyNode.Poisoned = true
 		err.addKind(PropertyNodeKind)
 		p.skipUntilSentinel()
 		p.emitError(err)
-		return prop
+		return propertyNode
 	}
 
 	var token Token
@@ -195,8 +194,8 @@ func (p *Parser) parseProperty() DefNode {
 	if err.isPresent() {
 		panic(fmt.Sprintf("assertion error: %s", err))
 	}
-	prop.Begin = token.Begin
-	prop.Iden = token.Str
+	propertyNode.Begin = token.Begin
+	propertyNode.Iden = token.Str
 
 	if _, err := p.expect(TokEqual); err.isPresent() {
 		return propagate(err)
@@ -206,10 +205,10 @@ func (p *Parser) parseProperty() DefNode {
 	if err.isPresent() {
 		return propagate(err)
 	}
-	prop.End = token.End
-	prop.Value = str
+	propertyNode.End = token.End
+	propertyNode.StrValue = str
 
-	return prop
+	return propertyNode
 }
 
 var escSeqTable = map[rune]rune{'\\': '\\', 'n': '\n', '\t': '\t', 'f': '\f', 'r': '\r', '"': '"'}
@@ -251,15 +250,15 @@ func (p *Parser) parseString(token *Token) (string, ParseError) {
 }
 
 func (p *Parser) parseImport() DefNode {
-	imp := DefNode{Kind: ImportNodeKind}
+	importNode := DefNode{Kind: ImportNodeKind}
 
 	propagate := func(err ParseError) DefNode {
-		imp.End = err.actualToken.End
-		imp.Poisoned = true
+		importNode.End = err.actualToken.End
+		importNode.Poisoned = true
 		err.addKind(ImportNodeKind)
 		p.skipUntilSentinel()
 		p.emitError(err)
-		return imp
+		return importNode
 	}
 
 	var token Token
@@ -268,16 +267,16 @@ func (p *Parser) parseImport() DefNode {
 	if err.isPresent() {
 		panic(fmt.Sprintf("assertion error: %s", err))
 	}
-	imp.Begin = token.Begin
+	importNode.Begin = token.Begin
 
 	pathStr, err := p.parseString(&token)
 	if err.isPresent() {
 		return propagate(err)
 	}
-	imp.End = token.End
-	imp.Value = pathStr
+	importNode.End = token.End
+	importNode.StrValue = pathStr
 
-	return imp
+	return importNode
 }
 
 const DefaultMSize = 16
@@ -305,18 +304,6 @@ func (p *Parser) parseMessageSize(callKind NodeKind) (uint64, ParseError) {
 	return size, ParseError{}
 }
 
-func validateMsgName(name string) bool {
-	for i, c := range name {
-		if i == 0 && unicode.IsLower(c) {
-			return false
-		}
-		if !unicode.IsLetter(c) && !unicode.IsNumber(c) {
-			return false
-		}
-	}
-	return true
-}
-
 func (p *Parser) parseMessage() (DefNode, ParseError) {
 	var token Token
 	var err ParseError
@@ -329,10 +316,6 @@ func (p *Parser) parseMessage() (DefNode, ParseError) {
 		return DefNode{}, err.withKind(kind)
 	}
 	name := token.Str
-	nameOk := validateMsgName(name)
-	if !nameOk {
-		p.emitError(makeKindErr(token, IdenErrKind).withKind(kind))
-	}
 
 	size, err := p.parseMessageSize(kind)
 	if err.isPresent() {
@@ -344,11 +327,11 @@ func (p *Parser) parseMessage() (DefNode, ParseError) {
 	token = p.peek()
 	switch token.Kind {
 	case TokStruct:
-		node = p.parseStruct(name, nameOk)
+		node = p.parseStruct(name)
 	case TokEnum:
-		node = p.parseEnum(name, nameOk, size)
+		node = p.parseEnum(name, size)
 	case TokUnion:
-		node = p.parseUnion(name, nameOk, size)
+		node = p.parseUnion(name, size)
 	default:
 		p.eat()
 		err = makeExpectErr(token, TokTypeDef).withKind(kind)
@@ -357,9 +340,8 @@ func (p *Parser) parseMessage() (DefNode, ParseError) {
 	return node, err
 }
 
-func (p *Parser) parseStruct(name string, nameOk bool) DefNode {
+func (p *Parser) parseStruct(name string) DefNode {
 	strct := DefNode{Kind: StructNodeKind, Iden: name}
-	strct.Poisoned = !nameOk
 
 	propagate := func(err ParseError) {
 		strct.End = err.actualToken.End
@@ -520,9 +502,8 @@ func (p *Parser) parseValue() ValueNode {
 	return valueNode
 }
 
-func (p *Parser) parseUnion(name string, nameOk bool, size uint64) DefNode {
+func (p *Parser) parseUnion(name string, size uint64) DefNode {
 	union := DefNode{Kind: UnionNodeKind, Iden: name, Size: size}
-	union.Poisoned = !nameOk
 
 	propagate := func(err ParseError) {
 		union.End = err.actualToken.End
@@ -618,9 +599,8 @@ func (p *Parser) parseOption() MemberNode {
 	return option
 }
 
-func (p *Parser) parseEnum(name string, nameOk bool, size uint64) DefNode {
+func (p *Parser) parseEnum(name string, size uint64) DefNode {
 	enum := DefNode{Kind: EnumNodeKind, Iden: name, Size: size}
-	enum.Poisoned = !nameOk
 
 	propagate := func(err ParseError) {
 		enum.End = err.actualToken.End
@@ -776,7 +756,7 @@ func (p *Parser) parseTypeArgs(token *Token) ([]TypeNode, ParseError) {
 func (p *Parser) parseType() (TypeNode, ParseError) {
 	// each element of the array is a nested array index
 	var array []uint64
-	var arrTokenB Token
+	var arrTokenBegin Token
 
 	propagate := func(err ParseError) (TypeNode, ParseError) {
 		err.addKind(TypeNodeKind)
@@ -788,9 +768,9 @@ func (p *Parser) parseType() (TypeNode, ParseError) {
 		token := p.next()
 		switch token.Kind {
 		case TokLBrack:
-			if arrTokenB.Kind == TokUnknown {
+			if arrTokenBegin.Kind == TokUnknown {
 				// if begin token is unset, we know we're at the first array token
-				arrTokenB = token
+				arrTokenBegin = token
 			}
 			size, err := p.parseArraySize()
 			if err.isPresent() {
@@ -801,13 +781,13 @@ func (p *Parser) parseType() (TypeNode, ParseError) {
 			name := token.Str
 
 			// select the beginning token depending on whether the type ref is an array or not
-			var tokenB = token
-			if arrTokenB.Kind != TokUnknown {
-				tokenB = arrTokenB
+			var tokenBegin = token
+			if arrTokenBegin.Kind != TokUnknown {
+				tokenBegin = arrTokenBegin
 			}
-			tokenE := tokenB
+			tokenEnd := tokenBegin
 
-			typeArgs, err := p.parseTypeArgs(&tokenE)
+			typeArgs, err := p.parseTypeArgs(&tokenEnd)
 			if err.isPresent() {
 				return propagate(err)
 			}
@@ -815,7 +795,7 @@ func (p *Parser) parseType() (TypeNode, ParseError) {
 				Iden:      name,
 				Array:     array,
 				TypeArgs:  typeArgs,
-				Positions: Positions{Begin: tokenB.Begin, End: tokenE.End},
+				Positions: Positions{Begin: tokenBegin.Begin, End: tokenEnd.End},
 			}
 			return node, ParseError{}
 		default:

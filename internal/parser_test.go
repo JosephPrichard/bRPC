@@ -3,6 +3,7 @@ package internal
 import (
 	"fmt"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,16 +18,15 @@ func TestParser_Properties(t *testing.T) {
 	constant = "Value"
 	`
 
-	var errs []ParseError
-	nodes := runParser(input, &errs)
+	nodes, errs := runParser(input)
 	clearNodeList(nodes)
 
 	t.Logf("\n%s\n", FmtAst(nodes))
 
 	expectedNodes := []DefNode{
-		{Kind: ImportNodeKind, Value: "/services/schemas/animals"},
-		{Kind: PropertyNodeKind, Iden: "package", Value: "/hello/\\\"world\""},
-		{Kind: PropertyNodeKind, Iden: "constant", Value: "Value"},
+		{Kind: ImportNodeKind, StrValue: "/services/schemas/animals"},
+		{Kind: PropertyNodeKind, Iden: "package", StrValue: "/hello/\\\"world\""},
+		{Kind: PropertyNodeKind, Iden: "constant", StrValue: "Value"},
 	}
 
 	assert.Equal(t, expectedNodes, nodes)
@@ -51,8 +51,7 @@ func TestParser_Struct(t *testing.T) {
 		}
 	}
 	`
-	var errs []ParseError
-	nodes := runParser(input, &errs)
+	nodes, errs := runParser(input)
 	clearNodeList(nodes)
 
 	t.Logf("\n%s\n", FmtAst(nodes))
@@ -102,8 +101,7 @@ func TestParser_Struct_DefaultFields(t *testing.T) {
 		required three @3 float64 = 0.1;
 	}
 	`
-	var errs []ParseError
-	nodes := runParser(input, &errs)
+	nodes, errs := runParser(input)
 	clearNodeList(nodes)
 
 	t.Logf("\n%s\n", FmtAst(nodes))
@@ -150,8 +148,7 @@ func TestParser_Enum(t *testing.T) {
 		@3 Three;;;
 	}
 	`
-	var errs []ParseError
-	nodes := runParser(input, &errs)
+	nodes, errs := runParser(input)
 	clearNodeList(nodes)
 
 	t.Logf("\n%s\n", FmtAst(nodes))
@@ -186,8 +183,7 @@ func TestParser_Union(t *testing.T) {
         }
 	}
 	`
-	var errs []ParseError
-	nodes := runParser(input, &errs)
+	nodes, errs := runParser(input)
 	clearNodeList(nodes)
 
 	t.Logf("\n%s\n", FmtAst(nodes))
@@ -232,8 +228,7 @@ func TestParser_Service(t *testing.T) {
 		}
 	}
 	`
-	var errs []ParseError
-	nodes := runParser(input, &errs)
+	nodes, errs := runParser(input)
 	clearNodeList(nodes)
 
 	t.Logf("\n%s\n", FmtAst(nodes))
@@ -360,9 +355,8 @@ func TestParser_Errors(t *testing.T) {
 					},
 				},
 				{
-					Kind:     StructNodeKind,
-					Iden:     "Data_1",
-					Poisoned: true,
+					Kind: StructNodeKind,
+					Iden: "Data_1",
 					Members: []MemberNode{
 						{Modifier: Required, Iden: "one", Tag: 1, LeftType: TypeNode{Iden: "int128"}},
 					},
@@ -374,11 +368,6 @@ func TestParser_Errors(t *testing.T) {
 					nodeKind:    TypeNodeKind,
 					expected:    []TokKind{TokInteger, TokRBrack},
 					errKind:     ExpectErrKind,
-				},
-				{
-					actualToken: Token{TokVal{Kind: TokIden, Str: "Data_1"}, Positions{}},
-					nodeKind:    MessageNodeKind,
-					errKind:     IdenErrKind,
 				},
 			},
 		},
@@ -618,8 +607,7 @@ func TestParser_Errors(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(fmt.Sprintf("test/%s", test.name), func(t *testing.T) {
-			var errs []ParseError
-			nodes := runParser(test.input, &errs)
+			nodes, errs := runParser(test.input)
 			clearNodeList(nodes)
 
 			printLine := func(err string) { t.Log(err) }
@@ -633,12 +621,12 @@ func TestParser_Errors(t *testing.T) {
 }
 
 func TestParser_Garbage(t *testing.T) {
+	// note(Joseph): This is not a replacement for a fuzzer, just a sanity check
 	input := `hello world service struct field} lorem; ipsum 5a{ test 123 go there`
 	done := make(chan struct{})
 
 	go func() {
-		var errs []ParseError
-		_ = runParser(input, &errs)
+		_, _ = runParser(input)
 		close(done)
 	}()
 
@@ -647,5 +635,41 @@ func TestParser_Garbage(t *testing.T) {
 		t.Fatal("garbage parser test has timed out, is there an infinite loop?")
 	case <-done:
 		t.Log("finished garbage parser test")
+	}
+}
+
+func BenchmarkParser_Performance(b *testing.B) {
+	astGenConfig := &AstGenerationConfig{
+		maxDefNodes:    100,
+		maxMemberNodes: 25,
+		maxStrLength:   25,
+		maxDepth:       3,
+		maxArrayDim:    3,
+		arrayChance:    10,
+	}
+	for range 1 {
+		b.StopTimer()
+		randomNodes := generateAstWithConfig(astGenConfig)
+		astString := FmtAst(randomNodes)
+
+		// fmt.Printf("%v\n\n", FmtAstWithConfig(randomNodes, &FmtAstConfig{ShouldPrintLines: true}))
+
+		startTime := time.Now()
+		b.StartTimer()
+		resultNodes := parseOrElse(astString)
+
+		b.StopTimer()
+		endTime := time.Now()
+
+		lineCount := len(strings.Split(astString, "\n"))
+		totalTimeSecs := endTime.Sub(startTime).Seconds()
+		linesPerSecond := 0
+		if totalTimeSecs > 0 {
+			linesPerSecond = lineCount / int(totalTimeSecs)
+		}
+		fmt.Printf("AstLineCount: %d\n LinesPerSecond: %d\n", lineCount, linesPerSecond)
+
+		assert.Equal(b, astString, FmtAst(resultNodes))
+		b.StartTimer()
 	}
 }

@@ -13,7 +13,6 @@ const (
 	ExpectErrKind
 	EscSeqErrKind
 	SizeErrKind
-	IdenErrKind
 	NumErrKind
 )
 
@@ -89,8 +88,6 @@ func (err ParseError) String() string {
 		fmt.Fprintf(&sb, "%s is an invalid integer", err.actualToken.String())
 	case SizeErrKind:
 		sb.WriteString("struct does not allow a size argument")
-	case IdenErrKind:
-		sb.WriteString("Iden must begin with an uppercase and only contain alphanumerics")
 	default:
 		panic(fmt.Sprintf("assertion errror: unknown parse errKind: %d", err.errKind))
 	}
@@ -127,6 +124,7 @@ const (
 	UndefErrKind
 	FirstOrdErrKind
 	TagErrKind
+	IdenNameErr
 	TypeArgErrKind
 )
 
@@ -141,12 +139,16 @@ type ValidateErr struct {
 	gotTypeArgs []TypeNode
 }
 
-func makeRedefErr(nKind NodeKind, positions Positions, Iden string) ValidateErr {
-	return ValidateErr{errKind: RedefErrKind, positions: positions, nodeKind: nKind, iden: Iden}
+func makeRedefErr(nKind NodeKind, positions Positions, iden string) ValidateErr {
+	return ValidateErr{errKind: RedefErrKind, positions: positions, nodeKind: nKind, iden: iden}
 }
 
-func makeUndefErr(nKind NodeKind, positions Positions, Iden string) ValidateErr {
-	return ValidateErr{errKind: UndefErrKind, positions: positions, nodeKind: nKind, iden: Iden}
+func makeUndefErr(nKind NodeKind, positions Positions, iden string) ValidateErr {
+	return ValidateErr{errKind: UndefErrKind, positions: positions, nodeKind: nKind, iden: iden}
+}
+
+func makeNameErr(nKind NodeKind, positions Positions, iden string) ValidateErr {
+	return ValidateErr{errKind: IdenNameErr, positions: positions, nodeKind: nKind, iden: iden}
 }
 
 func makeTagErr(nKind NodeKind, positions Positions, expOrd uint64, gotOrd uint64) ValidateErr {
@@ -172,7 +174,11 @@ func (err ValidateErr) String() string {
 	sb.WriteString(err.nodeKind.String())
 	sb.WriteString(": ")
 
+	fmtState := &FmtAstState{sb: sb}
+
 	switch err.errKind {
+	case IdenNameErr:
+		fmt.Fprintf(&sb, "\"%s\" must begin with an uppercase and only contain alphanumerics", err.iden)
 	case RedefErrKind:
 		fmt.Fprintf(&sb, "\"%s\" is redefined", err.iden)
 	case UndefErrKind:
@@ -184,12 +190,12 @@ func (err ValidateErr) String() string {
 		if len(err.expTypeArgs) > 0 {
 			sb.WriteString(": ")
 		}
-		FmtTypeParams(&sb, err.expTypeArgs)
+		FmtTypeParams(fmtState, err.expTypeArgs)
 		fmt.Fprintf(&sb, ", got %d type arguments", len(err.gotTypeArgs))
 		if len(err.gotTypeArgs) > 0 {
 			sb.WriteString(": ")
 		}
-		FmtTypeArgs(&sb, err.gotTypeArgs)
+		FmtTypeArgs(fmtState, err.gotTypeArgs)
 	}
 
 	return sb.String()

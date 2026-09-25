@@ -28,12 +28,12 @@ func TestValidation_Errors(t *testing.T) {
 			`,
 			errs: []ValidateErr{
 				{
-					errKind: RedefErrKind,
+					errKind:  RedefErrKind,
 					nodeKind: StructNodeKind,
 					iden:     "Data",
 				},
 				{
-					errKind: RedefErrKind,
+					errKind:  RedefErrKind,
 					nodeKind: StructNodeKind,
 					iden:     "Data1",
 				},
@@ -91,32 +91,32 @@ func TestValidation_Errors(t *testing.T) {
 			`,
 			errs: []ValidateErr{
 				{
-					errKind: RedefErrKind,
-					iden:    "one",
+					errKind:  RedefErrKind,
+					iden:     "one",
 					nodeKind: FieldNodeKind,
 				},
 				{
-					errKind: TagErrKind,
-					iden:    "",
+					errKind:  TagErrKind,
+					iden:     "",
 					nodeKind: CaseNodeKind,
 					gotTag:   1,
 					expTag:   2,
 				},
 				{
-					errKind: RedefErrKind,
-					iden:    "One",
+					errKind:  RedefErrKind,
+					iden:     "One",
 					nodeKind: CaseNodeKind,
 				},
 				{
-					errKind: TagErrKind,
-					iden:    "",
+					errKind:  TagErrKind,
+					iden:     "",
 					nodeKind: OptionNodeKind,
 					gotTag:   1,
 					expTag:   2,
 				},
 				{
-					errKind: TagErrKind,
-					iden:    "",
+					errKind:  TagErrKind,
+					iden:     "",
 					nodeKind: OptionNodeKind,
 					gotTag:   0,
 					expTag:   1,
@@ -159,30 +159,17 @@ func TestValidation_Errors(t *testing.T) {
 				},
 			},
 		},
-		// {
-		// 	name: "RecursiveAst",
-		// 	input: `
-		// 	message Data1 struct {
-		// 		required one @1 int16;
-		// 		deprecated two @2 Data1;
-		// 		deprecated one @3 int16;
-
-		// 		message Data4 union {
-		// 			one @1 Data1;
-		// 			two @2 Data4;
-		// 		}
-		// 	}
-
-		// 	message Data2 struct {
-		// 		required one @1 Data3;
-
-		// 		message Data3 struct {
-		// 			required one @1 Data2;
-		// 		}
-		// 	}
-		// 	`,
-		// 	errs: []ValidateErr{},
-		// },
+		{
+			name:  "InvalidStruct",
+			input: `message Data_1 struct { required one @1 int128; }`,
+			errs: []ValidateErr{
+				{
+					iden:     "Data_1",
+					nodeKind: StructNodeKind,
+					errKind:  IdenNameErr,
+				},
+			},
+		},
 		// {
 		// 	name: "InvalidTypeArgs",
 		// 	input: `
@@ -195,20 +182,6 @@ func TestValidation_Errors(t *testing.T) {
 		// 	message Data2 union(A) {
 		// 		one @1 A;
 		// 		two @2 B;
-		// 	}
-		// 	`,
-		// 	errs: []error{},
-		// },
-		// {
-		// 	name: "RecursiveTypeArgs",
-		// 	input: `
-		// 	message Data3 struct(A) {
-		// 		deprecated one @1 A;
-		// 	}
-
-		// 	message Data2 union {
-		// 		one @1 Data3(Data2);
-		// 		two @2 int16;
 		// 	}
 		// 	`,
 		// 	errs: []error{},
