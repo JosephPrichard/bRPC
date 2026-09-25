@@ -662,10 +662,10 @@ func BenchmarkParser_Performance(b *testing.B) {
 		endTime := time.Now()
 
 		lineCount := len(strings.Split(astString, "\n"))
-		totalTimeSecs := endTime.Sub(startTime).Seconds()
+		totalTimeSecs := int(endTime.Sub(startTime).Seconds())
 		linesPerSecond := 0
 		if totalTimeSecs > 0 {
-			linesPerSecond = lineCount / int(totalTimeSecs)
+			linesPerSecond = lineCount / totalTimeSecs
 		}
 		fmt.Printf("AstLineCount: %d\n LinesPerSecond: %d\n", lineCount, linesPerSecond)
 
