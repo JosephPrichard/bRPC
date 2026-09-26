@@ -241,7 +241,7 @@ func (lex *Lexer) emitNext(kind TokKind) {
 	lex.emit(kind)
 }
 
-func (lex *Lexer) emitErr(expected TokKind) struct{} {
+func (lex *Lexer) emitError(expected TokKind) struct{} {
 	// scan until a sentinel symbol
 	if expected == TokComment {
 		lex.acceptUntil(newline)
@@ -335,7 +335,7 @@ func (lex *Lexer) lexNumeric() struct{} {
 			break
 		} else {
 			// stop at first invalid non-numeric
-			return lex.emitErr(kind)
+			return lex.emitError(kind)
 		}
 	}
 
@@ -344,13 +344,13 @@ func (lex *Lexer) lexNumeric() struct{} {
 	case TokInteger:
 		i, ok := new(big.Int).SetString(numericStr, 10)
 		if !ok {
-			return lex.emitErr(kind)
+			return lex.emitError(kind)
 		}
 		lex.emitInteger(kind, *i)
 	case TokFloat:
 		f64, err := strconv.ParseFloat(numericStr, 64)
 		if err != nil {
-			return lex.emitErr(kind)
+			return lex.emitError(kind)
 		}
 		lex.emitFloat(kind, f64)
 	default:
@@ -363,7 +363,7 @@ func (lex *Lexer) lexNumeric() struct{} {
 func (lex *Lexer) lexComment() {
 	lex.next()
 	if !lex.take("/") {
-		lex.emitErr(TokComment)
+		lex.emitError(TokComment)
 		return
 	}
 	lex.acceptUntil(newline)
@@ -375,17 +375,17 @@ func (lex *Lexer) lexTag() struct{} {
 	lex.next()
 	lex.acceptWhile(numeric)
 	if !lex.assert(whitespace + control) {
-		return lex.emitErr(kind)
+		return lex.emitError(kind)
 	}
 	if lex.curr-lex.start <= 1 {
-		return lex.emitErr(kind)
+		return lex.emitError(kind)
 	}
 
 	value := lex.span()
 
 	tagInt, ok := new(big.Int).SetString(value[1:], 10)
 	if !ok {
-		return lex.emitErr(kind)
+		return lex.emitError(kind)
 	}
 
 	lex.emitInteger(TokTag, *tagInt)
@@ -459,7 +459,7 @@ func (lex *Lexer) lex() bool {
 		} else if !unicode.IsControl(ch) && !unicode.IsPunct(ch) && !unicode.IsSpace(ch) {
 			lex.lexText()
 		} else {
-			lex.emitErr(TokUnknown)
+			lex.emitError(TokUnknown)
 		}
 	}
 	return true

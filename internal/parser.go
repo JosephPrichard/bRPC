@@ -18,8 +18,8 @@ func makeParser(tokens []Token) Parser {
 	return Parser{tokens: tokens, hasEofErr: false, errs: make([]ParseError, 0)}
 }
 
-func runParser(program string) ([]DefNode, []ParseError) {
-	lex := makeLexer(program)
+func Parse(spec string) ([]DefNode, []ParseError) {
+	lex := makeLexer(spec)
 	lex.run()
 
 	p := makeParser(lex.tokens)
@@ -28,8 +28,8 @@ func runParser(program string) ([]DefNode, []ParseError) {
 	return p.nodes, p.errs
 }
 
-func parseOrElse(program string) []DefNode {
-	nodes, errs := runParser(program)
+func MustParse(spec string) []DefNode {
+	nodes, errs := Parse(spec)
 
 	if len(errs) > 0 {
 		panic(fmt.Sprintf("%+v", errs))

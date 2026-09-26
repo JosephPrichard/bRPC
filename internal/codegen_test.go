@@ -18,7 +18,7 @@ func TestCodegen_Structs(t *testing.T) {
 	}
 	`
 
-	_ = runCodeBuilder(parseOrElse(input), "data")
+	_ = runCodeBuilder(MustParse(input), "data")
 
 	// assert.Equal(t, "", output)
 	// assert.Empty(t, errs)
@@ -35,7 +35,7 @@ func TestCodegen_Union(t *testing.T) {
 	}
 	`
 
-	_ = runCodeBuilder(parseOrElse(input), "data")
+	_ = runCodeBuilder(MustParse(input), "data")
 
 	// assert.Equal(t, "", output)
 	// assert.Empty(t, errs)
@@ -50,7 +50,7 @@ func TestCodegen_Enum(t *testing.T) {
 		@3 Three;
 	}
 	`
-	_ = runCodeBuilder(parseOrElse(input), "data")
+	_ = runCodeBuilder(MustParse(input), "data")
 
 	// assert.Equal(t, "", output)
 	// assert.Empty(t, errs)
@@ -63,7 +63,7 @@ func TestCodegen_Service(t *testing.T) {
 		rpc @1 Do(Input) returns (Output)
 	}
 	`
-	_ = runCodeBuilder(parseOrElse(input), "data")
+	_ = runCodeBuilder(MustParse(input), "data")
 
 	// t.Logf("\n%s", output)
 	// for _, err := range errs {

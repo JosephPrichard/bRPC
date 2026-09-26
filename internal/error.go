@@ -201,7 +201,7 @@ func (err ValidateErr) String() string {
 	return sb.String()
 }
 
-func printErrors[T error](errs []T, filePath string, printLine func(string)) {
+func PrintErrors[T error](errs []T, filePath string, printLine func(string)) {
 	for _, err := range errs {
 		printLine(fmt.Sprintf("%s:%s", filePath, err.Error()))
 	}

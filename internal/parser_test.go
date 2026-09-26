@@ -18,7 +18,7 @@ func TestParser_Properties(t *testing.T) {
 	constant = "Value"
 	`
 
-	nodes, errs := runParser(input)
+	nodes, errs := Parse(input)
 	clearNodeList(nodes)
 
 	t.Logf("\n%s\n", FmtAst(nodes))
@@ -51,7 +51,7 @@ func TestParser_Struct(t *testing.T) {
 		}
 	}
 	`
-	nodes, errs := runParser(input)
+	nodes, errs := Parse(input)
 	clearNodeList(nodes)
 
 	t.Logf("\n%s\n", FmtAst(nodes))
@@ -101,7 +101,7 @@ func TestParser_Struct_DefaultFields(t *testing.T) {
 		required three @3 float64 = 0.1;
 	}
 	`
-	nodes, errs := runParser(input)
+	nodes, errs := Parse(input)
 	clearNodeList(nodes)
 
 	t.Logf("\n%s\n", FmtAst(nodes))
@@ -148,7 +148,7 @@ func TestParser_Enum(t *testing.T) {
 		@3 Three;;;
 	}
 	`
-	nodes, errs := runParser(input)
+	nodes, errs := Parse(input)
 	clearNodeList(nodes)
 
 	t.Logf("\n%s\n", FmtAst(nodes))
@@ -183,7 +183,7 @@ func TestParser_Union(t *testing.T) {
         }
 	}
 	`
-	nodes, errs := runParser(input)
+	nodes, errs := Parse(input)
 	clearNodeList(nodes)
 
 	t.Logf("\n%s\n", FmtAst(nodes))
@@ -228,7 +228,7 @@ func TestParser_Service(t *testing.T) {
 		}
 	}
 	`
-	nodes, errs := runParser(input)
+	nodes, errs := Parse(input)
 	clearNodeList(nodes)
 
 	t.Logf("\n%s\n", FmtAst(nodes))
@@ -607,11 +607,11 @@ func TestParser_Errors(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(fmt.Sprintf("test/%s", test.name), func(t *testing.T) {
-			nodes, errs := runParser(test.input)
+			nodes, errs := Parse(test.input)
 			clearNodeList(nodes)
 
 			printLine := func(err string) { t.Log(err) }
-			printErrors(errs, "test", printLine)
+			PrintErrors(errs, "test", printLine)
 			clearParseErrors(errs)
 
 			assert.Equal(t, test.nodes, nodes)
@@ -626,7 +626,7 @@ func TestParser_Garbage(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		_, _ = runParser(input)
+		_, _ = Parse(input)
 		close(done)
 	}()
 
@@ -638,7 +638,44 @@ func TestParser_Garbage(t *testing.T) {
 	}
 }
 
-func BenchmarkParser_Performance(b *testing.B) {
+func Benchmark_Parser(b *testing.B) {
+	astGenConfig := &AstGenerationConfig{
+		maxDefNodes:    1000,
+		maxMemberNodes: 75,
+		maxStrLength:   25,
+		maxDepth:       3,
+		maxArrayDim:    3,
+		arrayChance:    10,
+	}
+	for b.Loop() {
+		b.StopTimer()
+		randomAst := generateAstWithConfig(astGenConfig)
+		astString := FmtAst(randomAst)
+
+		// fmt.Printf("%v\n\n", FmtAstWithConfig(randomNodes, &FmtAstConfig{ShouldPrintLines: true}))
+
+		startTime := time.Now()
+		b.StartTimer()
+		resultNodes := MustParse(astString)
+
+		b.StopTimer()
+		endTime := time.Now()
+
+		lineCount := strings.Count(astString, "\n") + 1
+		totalTime := endTime.Sub(startTime)
+
+		fmt.Printf("AstLineCount: %d\nDuration: %v\nLinesPerSecond: %f\n\n",
+			lineCount,
+			totalTime,
+			linesPerUnit(lineCount, totalTime.Seconds()),
+		)
+
+		assert.Equal(b, astString, FmtAst(resultNodes))
+		b.StartTimer()
+	}
+}
+
+func Fuzz_Parser(f *testing.F) {
 	astGenConfig := &AstGenerationConfig{
 		maxDefNodes:    100,
 		maxMemberNodes: 25,
@@ -647,29 +684,22 @@ func BenchmarkParser_Performance(b *testing.B) {
 		maxArrayDim:    3,
 		arrayChance:    10,
 	}
-	for range 1 {
-		b.StopTimer()
-		randomNodes := generateAstWithConfig(astGenConfig)
-		astString := FmtAst(randomNodes)
 
-		// fmt.Printf("%v\n\n", FmtAstWithConfig(randomNodes, &FmtAstConfig{ShouldPrintLines: true}))
+	var testCases []string
 
-		startTime := time.Now()
-		b.StartTimer()
-		resultNodes := parseOrElse(astString)
-
-		b.StopTimer()
-		endTime := time.Now()
-
-		lineCount := len(strings.Split(astString, "\n"))
-		totalTimeSecs := int(endTime.Sub(startTime).Seconds())
-		linesPerSecond := 0
-		if totalTimeSecs > 0 {
-			linesPerSecond = lineCount / totalTimeSecs
-		}
-		fmt.Printf("AstLineCount: %d\n LinesPerSecond: %d\n", lineCount, linesPerSecond)
-
-		assert.Equal(b, astString, FmtAst(resultNodes))
-		b.StartTimer()
+	testCount := 10
+	for range testCount {
+		ast := generateAstWithConfig(astGenConfig)
+		testCases = append(testCases, FmtAst(ast))
 	}
+
+	// fmt.Printf("Fuzz_Parser: %+v test cases generated\n", testCases)
+
+	for _, tc := range testCases {
+		f.Add(tc)
+	}
+
+	f.Fuzz(func(t *testing.T, spec string) {
+		_, _ = Parse(spec)
+	})
 }

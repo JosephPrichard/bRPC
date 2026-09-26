@@ -21,3 +21,11 @@ func clearTypeNode(node *TypeNode) {
 		clearTypeNode(&node.TypeArgs[i])
 	}
 }
+
+func linesPerUnit(lineCount int, totalTime float64) float64 {
+	linesPerUnits := 0.0
+	if totalTime > 0 {
+		linesPerUnits = float64(lineCount) / totalTime
+	}
+	return linesPerUnits
+}
