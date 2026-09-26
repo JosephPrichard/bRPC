@@ -638,20 +638,14 @@ func TestParser_Garbage(t *testing.T) {
 	}
 }
 
-func Benchmark_Parser(b *testing.B) {
-	astGenConfig := &AstGenerationConfig{
-		maxDefNodes:    1000,
-		maxMemberNodes: 75,
-		maxStrLength:   25,
-		maxDepth:       3,
-		maxArrayDim:    3,
-		arrayChance:    10,
+func Benchmark_ParseLargeAst(b *testing.B) {
+	astString, err := loadSampleFile()
+	if err != nil {
+		b.Fatal(err.Error())
 	}
+
 	for b.Loop() {
 		b.StopTimer()
-		randomAst := generateAstWithConfig(astGenConfig)
-		astString := FmtAst(randomAst)
-
 		// fmt.Printf("%v\n\n", FmtAstWithConfig(randomNodes, &FmtAstConfig{ShouldPrintLines: true}))
 
 		startTime := time.Now()

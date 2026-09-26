@@ -265,3 +265,28 @@ func TestLexer_BadInteger(t *testing.T) {
 
 	assert.Equal(t, expTokens, tokens)
 }
+
+func TestLexer_BadTag(t *testing.T) {
+	input := `
+	message Data struct {
+		required one @ Data;
+	}
+	`
+	tokens := runLexer(input)
+
+	expTokens := []TokVal{
+		{Kind: TokMessage, Str: "message"},
+		{Kind: TokIden, Str: "Data"},
+		{Kind: TokStruct, Str: "struct"},
+		{Kind: TokLBrace, Str: "{"},
+		{Kind: TokRequired, Str: "required"},
+		{Kind: TokIden, Str: "one"},
+		{Kind: TokErr, Str: "@", Expected: TokTag},
+		{Kind: TokIden, Str: "Data"},
+		{Kind: TokSemicolon, Str: ";"},
+		{Kind: TokRBrace, Str: "}"},
+		{Kind: TokEof},
+	}
+
+	assert.Equal(t, expTokens, tokens)
+}

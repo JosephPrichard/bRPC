@@ -22,8 +22,9 @@ func (v *Validator) emit(err ValidateErr) {
 	v.errs = append(v.errs, err)
 }
 
-func (v *Validator) transformDefList(nodes []DefNode, prev *TypeDefStack) {
-	stack := makeTypeDefStack(prev)
+func (v *Validator) transformDefList(nodes []DefNode, prevStack *TypeDefStack) {
+	stack := makeTypeDefStack(prevStack)
+
 	for i := range nodes {
 		node := &nodes[i]
 		if !node.Kind.isTypeDef() {
